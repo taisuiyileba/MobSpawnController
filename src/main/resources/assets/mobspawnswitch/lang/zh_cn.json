@@ -5,6 +5,7 @@
   "gui.mobspawnswitch.filter.partially_enabled": "部分启用",
   "gui.mobspawnswitch.filter.disabled": "已禁用",
   "gui.mobspawnswitch.all": "全部",
+  "gui.mobspawnswitch.no_permission": "你没有权限修改生物生成规则！",
   "gui.mobspawnswitch.spawntype.natural": "自然生成",
   "gui.mobspawnswitch.spawntype.chunk_generation": "区块生成",
   "gui.mobspawnswitch.spawntype.spawner": "刷怪笼",

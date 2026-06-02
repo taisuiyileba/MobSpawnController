@@ -92,6 +92,13 @@ public class MobSpawnEditScreen extends Screen {
     }
 
     private void saveAndClose() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null && !mc.player.hasPermissions(2)) {
+            mc.player.displayClientMessage(Component.translatable("gui.mobspawnswitch.no_permission").withStyle(net.minecraft.ChatFormatting.RED), false);
+            mc.setScreen(parent);
+            return;
+        }
+
         for (MobSpawnType type : spawnTypes) {
             Boolean val = editRules.get(type);
             if (val != null) {
@@ -105,7 +112,7 @@ public class MobSpawnEditScreen extends Screen {
         parentMap.clear();
         parentMap.putAll(editRules);
 
-        Minecraft.getInstance().setScreen(parent);
+        mc.setScreen(parent);
     }
 
     @Override

@@ -5,6 +5,7 @@
   "gui.mobspawnswitch.filter.partially_enabled": "Partially Enabled",
   "gui.mobspawnswitch.filter.disabled": "Disabled",
   "gui.mobspawnswitch.all": "ALL",
+  "gui.mobspawnswitch.no_permission": "You do not have permission to modify mob spawn rules!",
   "gui.mobspawnswitch.spawntype.natural": "Natural",
   "gui.mobspawnswitch.spawntype.chunk_generation": "Chunk Generation",
   "gui.mobspawnswitch.spawntype.spawner": "Spawner",

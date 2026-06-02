@@ -15,7 +15,7 @@ public class MobSpawnClientEvents {
 
     public static final KeyMapping OPEN_GUI_KEY = new KeyMapping(
             "key.mobspawnswitch.open_gui",
-            GLFW.GLFW_KEY_M,
+            GLFW.GLFW_KEY_N,
             "key.categories.mobspawnswitch"
     );
 
