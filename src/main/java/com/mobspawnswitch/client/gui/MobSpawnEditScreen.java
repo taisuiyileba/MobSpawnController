@@ -17,10 +17,10 @@ import java.util.*;
 
 public class MobSpawnEditScreen extends Screen {
 
-    private static final int ROW_HEIGHT = 24;
-    private static final int TOGGLE_W = 32;
-    private static final int TOGGLE_H = 14;
-    private static final int HEADER_HEIGHT = 50;
+    private static final int ROW_HEIGHT = 28; // Increased for better spacing
+    private static final int TOGGLE_W = 36; // Slightly wider
+    private static final int TOGGLE_H = 16; // Slightly taller
+    private static final int HEADER_HEIGHT = 56; // Increased header height
 
     private final MobSpawnSwitchScreen parent;
     private final ResourceLocation mobId;
@@ -112,22 +112,24 @@ public class MobSpawnEditScreen extends Screen {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         this.renderBackground(guiGraphics);
 
-        guiGraphics.fill(panelLeft, panelTop, panelRight, panelBottom, 0xCC222222);
+        // Main panel background with slight transparency and better colors
+        guiGraphics.fill(panelLeft, panelTop, panelRight, panelBottom, 0xEE1A1A1A);
 
-        guiGraphics.fill(panelLeft, panelTop, panelRight, panelTop + 1, 0xFF555555);
-        guiGraphics.fill(panelLeft, panelBottom - 1, panelRight, panelBottom, 0xFF555555);
-        guiGraphics.fill(panelLeft, panelTop, panelLeft + 1, panelBottom, 0xFF555555);
-        guiGraphics.fill(panelRight - 1, panelTop, panelRight, panelBottom, 0xFF555555);
+        // Panel borders
+        guiGraphics.fill(panelLeft, panelTop, panelRight, panelTop + 1, 0xFF444444);
+        guiGraphics.fill(panelLeft, panelBottom - 1, panelRight, panelBottom, 0xFF444444);
+        guiGraphics.fill(panelLeft, panelTop, panelLeft + 1, panelBottom, 0xFF444444);
+        guiGraphics.fill(panelRight - 1, panelTop, panelRight, panelBottom, 0xFF444444);
 
-        int headerY = panelTop + 6;
-        int iconSize = 24;
-        int iconX = panelLeft + 12 + iconSize / 2;
-        int iconY = headerY + iconSize / 2 + 2;
+        int headerY = panelTop + 8;
+        int iconSize = 32; // Larger icon in edit screen
+        int iconX = panelLeft + 16 + iconSize / 2;
+        int iconY = headerY + iconSize / 2;
         if (entityType != null) {
             MobSpawnSwitchScreen.renderEntityIcon(guiGraphics, entityType, iconX, iconY, iconSize, parent.getEntityCache());
         }
 
-        int textX = panelLeft + 12 + iconSize + 8;
+        int textX = panelLeft + 16 + iconSize + 12;
         String mainName;
         String subName;
         if (parent.isShowTranslatedName() && entityType != null) {
@@ -139,7 +141,7 @@ public class MobSpawnEditScreen extends Screen {
         }
         guiGraphics.drawString(this.font, mainName, textX, headerY + 4, 0xFFFFFF);
         if (!subName.isEmpty()) {
-            guiGraphics.drawString(this.font, subName, textX, headerY + 16, 0xAAAAAA);
+            guiGraphics.drawString(this.font, subName, textX, headerY + 18, 0xAAAAAA);
         }
 
         boolean allTrue = true;
@@ -151,12 +153,14 @@ public class MobSpawnEditScreen extends Screen {
             }
         }
 
-        int allToggleX = panelRight - 12 - TOGGLE_W;
-        int allToggleY = headerY + 10;
+        int allToggleX = panelRight - 16 - TOGGLE_W;
+        int allToggleY = headerY + 12;
         drawToggle(guiGraphics, allToggleX, allToggleY, allTrue, mouseX, mouseY);
-        guiGraphics.drawString(this.font, "ALL", allToggleX - font.width("ALL") - 4, allToggleY + (TOGGLE_H - font.lineHeight) / 2, 0xCCCCCC);
+        String allText = Component.translatable("gui.mobspawnswitch.all").getString();
+        guiGraphics.drawString(this.font, allText, allToggleX - font.width(allText) - 6, allToggleY + (TOGGLE_H - font.lineHeight) / 2, 0xCCCCCC);
 
-        guiGraphics.fill(panelLeft + 4, listTop - 1, panelRight - 4, listTop, 0xFF444444);
+        // List background
+        guiGraphics.fill(panelLeft + 4, listTop - 1, panelRight - 4, listTop, 0xFF333333);
 
         super.render(guiGraphics, mouseX, mouseY, partialTick);
 
@@ -174,17 +178,24 @@ public class MobSpawnEditScreen extends Screen {
             }
 
             if (i % 2 == 0) {
+                guiGraphics.fill(panelLeft + 4, rowY, panelRight - 4, rowY + ROW_HEIGHT, 0x10FFFFFF);
+            }
+            
+            boolean hoveredRow = mouseX >= panelLeft + 4 && mouseX < panelRight - 4 && mouseY >= rowY && mouseY < rowY + ROW_HEIGHT;
+            if (hoveredRow) {
                 guiGraphics.fill(panelLeft + 4, rowY, panelRight - 4, rowY + ROW_HEIGHT, 0x15FFFFFF);
             }
 
             String typeName = spawnType.name().toLowerCase(Locale.ROOT);
+            String translatedName = Component.translatable("gui.mobspawnswitch.spawntype." + typeName).getString();
+            
             int textYPos = rowY + (ROW_HEIGHT - font.lineHeight) / 2;
-            guiGraphics.drawString(this.font, typeName, panelLeft + 14, textYPos, 0xDDDDDD);
+            guiGraphics.drawString(this.font, translatedName, panelLeft + 16, textYPos, 0xEEEEEE);
 
             Boolean val = editRules.get(spawnType);
             boolean toggleState = val == null || val;
 
-            int toggleX = panelRight - 14 - TOGGLE_W;
+            int toggleX = panelRight - 16 - TOGGLE_W;
             int toggleY = rowY + (ROW_HEIGHT - TOGGLE_H) / 2;
             drawToggle(guiGraphics, toggleX, toggleY, toggleState, mouseX, mouseY);
         }
@@ -192,36 +203,46 @@ public class MobSpawnEditScreen extends Screen {
         guiGraphics.disableScissor();
 
         if (contentHeight > visibleHeight) {
-            int scrollBarX = panelRight - 7;
-            int scrollBarW = 3;
-            int scrollBarH = Math.max(15, (int) ((double) visibleHeight * visibleHeight / contentHeight));
+            int scrollBarX = panelRight - 8;
+            int scrollBarW = 4;
+            int scrollBarH = Math.max(20, (int) ((double) visibleHeight * visibleHeight / contentHeight));
             int maxScroll = getMaxScroll();
             int scrollBarY = listTop + (maxScroll > 0 ? (int) ((double) scrollOffset / maxScroll * (visibleHeight - scrollBarH)) : 0);
-            guiGraphics.fill(scrollBarX, listTop, scrollBarX + scrollBarW, listBottom, 0x30FFFFFF);
-            guiGraphics.fill(scrollBarX, scrollBarY, scrollBarX + scrollBarW, scrollBarY + scrollBarH, 0x99FFFFFF);
+            guiGraphics.fill(scrollBarX, listTop, scrollBarX + scrollBarW, listBottom, 0x40000000);
+            guiGraphics.fill(scrollBarX, scrollBarY, scrollBarX + scrollBarW, scrollBarY + scrollBarH, 0xAAFFFFFF);
         }
 
-        guiGraphics.fill(panelLeft + 4, listBottom, panelRight - 4, listBottom + 1, 0xFF444444);
+        guiGraphics.fill(panelLeft + 4, listBottom, panelRight - 4, listBottom + 1, 0xFF333333);
     }
 
     private void drawToggle(GuiGraphics guiGraphics, int x, int y, boolean state, int mouseX, int mouseY) {
-        int bgColor = state ? 0xFF00AA00 : 0xFFAA0000;
+        int bgColor = state ? 0xFF22CC22 : 0xFFCC2222;
+        int borderColor = state ? 0xFF005500 : 0xFF550000;
 
         boolean hovered = mouseX >= x && mouseX < x + TOGGLE_W && mouseY >= y && mouseY < y + TOGGLE_H;
         if (hovered) {
             bgColor = brighten(bgColor);
         }
 
+        // Draw border
+        guiGraphics.fill(x - 1, y - 1, x + TOGGLE_W + 1, y + TOGGLE_H + 1, borderColor);
+        // Draw background
         guiGraphics.fill(x, y, x + TOGGLE_W, y + TOGGLE_H, bgColor);
+        // Draw inner shadow/highlight
+        guiGraphics.fill(x, y, x + TOGGLE_W, y + 2, 0x30FFFFFF);
 
         int knobSize = TOGGLE_H - 4;
         int knobX = state ? x + TOGGLE_W - knobSize - 2 : x + 2;
         int knobY = y + 2;
-        guiGraphics.fill(knobX, knobY, knobX + knobSize, knobY + knobSize, 0xFFEEEEEE);
+        
+        // Draw knob shadow
+        guiGraphics.fill(knobX + 1, knobY + 1, knobX + knobSize + 1, knobY + knobSize + 1, 0x55000000);
+        // Draw knob
+        guiGraphics.fill(knobX, knobY, knobX + knobSize, knobY + knobSize, 0xFFFFFFFF);
 
         String label = state ? "ON" : "OFF";
-        int labelX = state ? x + 4 : x + TOGGLE_W - font.width(label) - 4;
-        guiGraphics.drawString(this.font, label, labelX, y + (TOGGLE_H - font.lineHeight) / 2, 0xFFFFFF);
+        int labelX = state ? x + 5 : x + TOGGLE_W - font.width(label) - 5;
+        guiGraphics.drawString(this.font, label, labelX, y + (TOGGLE_H - font.lineHeight) / 2 + 1, 0xFFFFFF);
     }
 
     private static int brighten(int color) {
@@ -238,8 +259,8 @@ public class MobSpawnEditScreen extends Screen {
             return true;
         }
 
-        int allToggleX = panelRight - 12 - TOGGLE_W;
-        int allToggleY = panelTop + 6 + 10;
+        int allToggleX = panelRight - 16 - TOGGLE_W;
+        int allToggleY = panelTop + 8 + 12;
         if (mouseX >= allToggleX && mouseX < allToggleX + TOGGLE_W
                 && mouseY >= allToggleY && mouseY < allToggleY + TOGGLE_H) {
             boolean allTrue = true;
@@ -259,9 +280,9 @@ public class MobSpawnEditScreen extends Screen {
 
         int visibleHeight = listBottom - listTop;
         if (contentHeight > visibleHeight) {
-            int scrollBarX = panelRight - 7;
-            int scrollBarW = 3;
-            int scrollBarH = Math.max(15, (int) ((double) visibleHeight * visibleHeight / contentHeight));
+            int scrollBarX = panelRight - 8;
+            int scrollBarW = 4;
+            int scrollBarH = Math.max(20, (int) ((double) visibleHeight * visibleHeight / contentHeight));
             int maxScroll = getMaxScroll();
             int scrollBarY = listTop + (maxScroll > 0 ? (int) ((double) scrollOffset / maxScroll * (visibleHeight - scrollBarH)) : 0);
             if (mouseX >= scrollBarX && mouseX < scrollBarX + scrollBarW
@@ -280,7 +301,7 @@ public class MobSpawnEditScreen extends Screen {
                 continue;
             }
 
-            int toggleX = panelRight - 14 - TOGGLE_W;
+            int toggleX = panelRight - 16 - TOGGLE_W;
             int toggleY = rowY + (ROW_HEIGHT - TOGGLE_H) / 2;
 
             if (mouseX >= toggleX && mouseX < toggleX + TOGGLE_W
@@ -309,7 +330,7 @@ public class MobSpawnEditScreen extends Screen {
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
         if (draggingScrollbar) {
             int visibleHeight = listBottom - listTop;
-            int scrollBarH = Math.max(15, (int) ((double) visibleHeight * visibleHeight / contentHeight));
+            int scrollBarH = Math.max(20, (int) ((double) visibleHeight * visibleHeight / contentHeight));
             int trackHeight = visibleHeight - scrollBarH;
             if (trackHeight > 0) {
                 double deltaY = mouseY - dragStartY;
