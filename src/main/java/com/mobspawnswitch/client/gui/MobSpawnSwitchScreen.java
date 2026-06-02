@@ -3,7 +3,6 @@ package com.mobspawnswitch.client.gui;
 import com.mobspawnswitch.network.ClientboundSyncRulesPacket;
 import com.mobspawnswitch.network.NetworkHandler;
 import com.mobspawnswitch.network.ServerboundRequestRulesPacket;
-import com.mobspawnswitch.network.ServerboundToggleSpawnPacket;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -15,6 +14,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.joml.Matrix4f;
@@ -25,10 +25,11 @@ import java.util.stream.Collectors;
 
 public class MobSpawnSwitchScreen extends Screen implements ClientboundSyncRulesPacket.RuleSyncReceiver {
 
-    private static final int ROW_HEIGHT = 48;
+    private static final int ROW_HEIGHT = 28;
     private static final int PADDING = 4;
-    private static final int BUTTON_W = 14;
-    private static final int BUTTON_H = 14;
+    private static final int EDIT_BTN_W = 36;
+    private static final int EDIT_BTN_H = 16;
+    private static final int STATUS_SIZE = 8;
 
     private EditBox searchBox;
     private Button displayModeButton;
@@ -39,6 +40,9 @@ public class MobSpawnSwitchScreen extends Screen implements ClientboundSyncRules
     private List<ResourceLocation> filteredMobIds = new ArrayList<>();
 
     private double scrollOffset = 0;
+    private boolean draggingScrollbar = false;
+    private double dragStartY = 0;
+    private double dragStartOffset = 0;
     private int listTop;
     private int listBottom;
     private int listLeft;
@@ -56,7 +60,7 @@ public class MobSpawnSwitchScreen extends Screen implements ClientboundSyncRules
         super.init();
 
         int centerX = this.width / 2;
-        int panelWidth = Math.min(this.width - 40, 420);
+        int panelWidth = Math.min(this.width - 40, 380);
         listLeft = centerX - panelWidth / 2;
         listRight = centerX + panelWidth / 2;
         listTop = 52;
@@ -75,7 +79,12 @@ public class MobSpawnSwitchScreen extends Screen implements ClientboundSyncRules
         }).bounds(listLeft + searchWidth + 4, 28, 82, 18).build();
         this.addRenderableWidget(displayModeButton);
 
-        allMobIds = ForgeRegistries.ENTITY_TYPES.getKeys().stream()
+        allMobIds = ForgeRegistries.ENTITY_TYPES.getEntries().stream()
+                .filter(entry -> {
+                    MobCategory category = entry.getValue().getCategory();
+                    return category != MobCategory.MISC;
+                })
+                .map(entry -> entry.getKey().location())
                 .sorted(Comparator.comparing(ResourceLocation::toString))
                 .collect(Collectors.toList());
 
@@ -87,6 +96,18 @@ public class MobSpawnSwitchScreen extends Screen implements ClientboundSyncRules
     @Override
     public void onRulesReceived(Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> newRules) {
         this.rules = new HashMap<>(newRules);
+    }
+
+    public Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> getRules() {
+        return rules;
+    }
+
+    public boolean isShowTranslatedName() {
+        return showTranslatedName;
+    }
+
+    public Map<EntityType<?>, Entity> getEntityCache() {
+        return entityCache;
     }
 
     private void applyFilter() {
@@ -112,6 +133,10 @@ public class MobSpawnSwitchScreen extends Screen implements ClientboundSyncRules
         }
         contentHeight = filteredMobIds.size() * ROW_HEIGHT;
         scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, contentHeight - (listBottom - listTop))));
+    }
+
+    private int getMaxScroll() {
+        return Math.max(0, contentHeight - (listBottom - listTop));
     }
 
     @Override
@@ -144,7 +169,7 @@ public class MobSpawnSwitchScreen extends Screen implements ClientboundSyncRules
             guiGraphics.fill(listLeft, rowY, listRight, rowY + ROW_HEIGHT - 1, bgColor);
 
             EntityType<?> entityType = ForgeRegistries.ENTITY_TYPES.getValue(mobId);
-            int iconSize = 20;
+            int iconSize = 18;
             int iconX = listLeft + PADDING + iconSize / 2;
             int iconY = rowY + ROW_HEIGHT / 2;
             if (entityType != null) {
@@ -158,90 +183,56 @@ public class MobSpawnSwitchScreen extends Screen implements ClientboundSyncRules
                 displayName = mobId.toString();
             }
             int textX = listLeft + PADDING + iconSize + 6;
-            guiGraphics.drawString(this.font, displayName, textX, rowY + 4, 0xFFFFFF);
+            int textY = rowY + (ROW_HEIGHT - font.lineHeight) / 2;
+            guiGraphics.drawString(this.font, displayName, textX, textY, 0xFFFFFF);
 
-            String idOrName;
-            if (showTranslatedName) {
-                idOrName = mobId.toString();
-            } else if (entityType != null) {
-                idOrName = entityType.getDescription().getString();
+            int editBtnX = listRight - EDIT_BTN_W - PADDING - 6;
+            int editBtnY = rowY + (ROW_HEIGHT - EDIT_BTN_H) / 2;
+            boolean hovered = mouseX >= editBtnX && mouseX < editBtnX + EDIT_BTN_W
+                    && mouseY >= editBtnY && mouseY < editBtnY + EDIT_BTN_H;
+            int btnColor = hovered ? 0xFF4488CC : 0xFF336699;
+            guiGraphics.fill(editBtnX, editBtnY, editBtnX + EDIT_BTN_W, editBtnY + EDIT_BTN_H, btnColor);
+            guiGraphics.drawCenteredString(this.font, "\u270E", editBtnX + EDIT_BTN_W / 2, editBtnY + (EDIT_BTN_H - font.lineHeight) / 2 + 1, 0xFFFFFF);
+
+            int statusX = editBtnX - STATUS_SIZE - 8;
+            int statusY = rowY + (ROW_HEIGHT - STATUS_SIZE) / 2;
+            int statusColor;
+            if (!hasAnyRule) {
+                statusColor = 0xFF00CC00;
             } else {
-                idOrName = "";
-            }
-            if (!idOrName.isEmpty()) {
-                guiGraphics.drawString(this.font, idOrName, textX, rowY + 16, 0xAAAAAA);
-            }
-
-            int btnY = rowY + ROW_HEIGHT - BUTTON_H - 4;
-            int btnX = textX;
-
-            for (MobSpawnType spawnType : spawnTypes) {
-                Boolean allowed = mobRules != null ? mobRules.get(spawnType) : null;
-                int color;
-                String label;
-                if (allowed == null) {
-                    color = 0xFF555555;
-                    label = "-";
-                } else if (allowed) {
-                    color = 0xFF00AA00;
-                    label = "\u2713";
-                } else {
-                    color = 0xFFAA0000;
-                    label = "\u2717";
-                }
-
-                guiGraphics.fill(btnX, btnY, btnX + BUTTON_W, btnY + BUTTON_H, color);
-                guiGraphics.drawCenteredString(this.font, label, btnX + BUTTON_W / 2, btnY + 3, 0xFFFFFF);
-
-                if (mouseX >= btnX && mouseX < btnX + BUTTON_W && mouseY >= btnY && mouseY < btnY + BUTTON_H) {
-                    guiGraphics.renderTooltip(this.font,
-                            Component.literal(spawnType.name().toLowerCase(Locale.ROOT) + ": " +
-                                    (allowed == null ? "default" : allowed.toString())),
-                            mouseX, mouseY);
-                }
-
-                btnX += BUTTON_W + 2;
-            }
-
-            int allBtnX = btnX + 4;
-            boolean allDisabled = true;
-            if (mobRules != null) {
+                boolean allEnabled = true;
+                boolean allDisabled = true;
                 for (MobSpawnType st : spawnTypes) {
                     Boolean v = mobRules.get(st);
-                    if (v == null || v) {
-                        allDisabled = false;
-                        break;
-                    }
+                    boolean effective = v == null || v;
+                    if (!effective) allEnabled = false;
+                    if (effective) allDisabled = false;
                 }
-            } else {
-                allDisabled = false;
+                if (allEnabled) {
+                    statusColor = 0xFF00CC00;
+                } else if (allDisabled) {
+                    statusColor = 0xFFCC0000;
+                } else {
+                    statusColor = 0xFFFFAA00;
+                }
             }
-
-            int allColor = allDisabled ? 0xFFAA0000 : 0xFF00AA00;
-            String allLabel = "ALL";
-            guiGraphics.fill(allBtnX, btnY, allBtnX + 24, btnY + BUTTON_H, allColor);
-            guiGraphics.drawCenteredString(this.font, allLabel, allBtnX + 12, btnY + 3, 0xFFFFFF);
-
-            if (mouseX >= allBtnX && mouseX < allBtnX + 24 && mouseY >= btnY && mouseY < btnY + BUTTON_H) {
-                guiGraphics.renderTooltip(this.font,
-                        Component.literal(allDisabled ? "Enable all spawn types" : "Disable all spawn types"),
-                        mouseX, mouseY);
-            }
+            guiGraphics.fill(statusX, statusY, statusX + STATUS_SIZE, statusY + STATUS_SIZE, statusColor);
         }
 
         guiGraphics.disableScissor();
 
         if (contentHeight > visibleHeight) {
-            int scrollBarX = listRight - 4;
+            int scrollBarX = listRight - 6;
+            int scrollBarW = 5;
             int scrollBarH = Math.max(20, (int) ((double) visibleHeight * visibleHeight / contentHeight));
-            int maxScroll = contentHeight - visibleHeight;
-            int scrollBarY = listTop + (int) ((double) scrollOffset / maxScroll * (visibleHeight - scrollBarH));
-            guiGraphics.fill(scrollBarX, listTop, scrollBarX + 4, listBottom, 0x40FFFFFF);
-            guiGraphics.fill(scrollBarX, scrollBarY, scrollBarX + 4, scrollBarY + scrollBarH, 0xAAFFFFFF);
+            int maxScroll = getMaxScroll();
+            int scrollBarY = listTop + (maxScroll > 0 ? (int) ((double) scrollOffset / maxScroll * (visibleHeight - scrollBarH)) : 0);
+            guiGraphics.fill(scrollBarX, listTop, scrollBarX + scrollBarW, listBottom, 0x40FFFFFF);
+            guiGraphics.fill(scrollBarX, scrollBarY, scrollBarX + scrollBarW, scrollBarY + scrollBarH, 0xAAFFFFFF);
         }
     }
 
-    private void renderEntityIcon(GuiGraphics guiGraphics, EntityType<?> entityType, int x, int y, int size) {
+    static void renderEntityIcon(GuiGraphics guiGraphics, EntityType<?> entityType, int x, int y, int size, Map<EntityType<?>, Entity> entityCache) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
 
@@ -278,10 +269,30 @@ public class MobSpawnSwitchScreen extends Screen implements ClientboundSyncRules
         }
     }
 
+    private void renderEntityIcon(GuiGraphics guiGraphics, EntityType<?> entityType, int x, int y, int size) {
+        renderEntityIcon(guiGraphics, entityType, x, y, size, entityCache);
+    }
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (super.mouseClicked(mouseX, mouseY, button)) {
             return true;
+        }
+
+        int visibleHeight = listBottom - listTop;
+        if (contentHeight > visibleHeight) {
+            int scrollBarX = listRight - 6;
+            int scrollBarW = 5;
+            int scrollBarH = Math.max(20, (int) ((double) visibleHeight * visibleHeight / contentHeight));
+            int maxScroll = getMaxScroll();
+            int scrollBarY = listTop + (maxScroll > 0 ? (int) ((double) scrollOffset / maxScroll * (visibleHeight - scrollBarH)) : 0);
+            if (mouseX >= scrollBarX && mouseX < scrollBarX + scrollBarW
+                    && mouseY >= scrollBarY && mouseY < scrollBarY + scrollBarH) {
+                draggingScrollbar = true;
+                dragStartY = mouseY;
+                dragStartOffset = scrollOffset;
+                return true;
+            }
         }
 
         if (mouseX < listLeft || mouseX > listRight || mouseY < listTop || mouseY > listBottom) {
@@ -289,7 +300,6 @@ public class MobSpawnSwitchScreen extends Screen implements ClientboundSyncRules
         }
 
         int y = listTop - (int) scrollOffset;
-        MobSpawnType[] spawnTypes = MobSpawnType.values();
 
         for (int idx = 0; idx < filteredMobIds.size(); idx++) {
             ResourceLocation mobId = filteredMobIds.get(idx);
@@ -299,60 +309,12 @@ public class MobSpawnSwitchScreen extends Screen implements ClientboundSyncRules
                 continue;
             }
 
-            EntityType<?> entityType = ForgeRegistries.ENTITY_TYPES.getValue(mobId);
-            int iconSize = 20;
-            int textX = listLeft + PADDING + iconSize + 6;
-            int btnY = rowY + ROW_HEIGHT - BUTTON_H - 4;
-            int btnX = textX;
+            int editBtnX = listRight - EDIT_BTN_W - PADDING - 6;
+            int editBtnY = rowY + (ROW_HEIGHT - EDIT_BTN_H) / 2;
 
-            EnumMap<MobSpawnType, Boolean> mobRules = rules.get(mobId);
-
-            for (MobSpawnType spawnType : spawnTypes) {
-                if (mouseX >= btnX && mouseX < btnX + BUTTON_W && mouseY >= btnY && mouseY < btnY + BUTTON_H) {
-                    Boolean current = mobRules != null ? mobRules.get(spawnType) : null;
-                    boolean newValue;
-                    if (current == null) {
-                        newValue = false;
-                    } else {
-                        newValue = !current;
-                    }
-                    NetworkHandler.CHANNEL.sendToServer(
-                            new ServerboundToggleSpawnPacket(mobId, spawnType.name().toLowerCase(Locale.ROOT), newValue));
-                    if (mobRules == null) {
-                        mobRules = new EnumMap<>(MobSpawnType.class);
-                        rules.put(mobId, mobRules);
-                    }
-                    mobRules.put(spawnType, newValue);
-                    return true;
-                }
-                btnX += BUTTON_W + 2;
-            }
-
-            int allBtnX = btnX + 4;
-            if (mouseX >= allBtnX && mouseX < allBtnX + 24 && mouseY >= btnY && mouseY < btnY + BUTTON_H) {
-                boolean allDisabled = true;
-                if (mobRules != null) {
-                    for (MobSpawnType st : spawnTypes) {
-                        Boolean v = mobRules.get(st);
-                        if (v == null || v) {
-                            allDisabled = false;
-                            break;
-                        }
-                    }
-                } else {
-                    allDisabled = false;
-                }
-
-                boolean newValue = allDisabled;
-                NetworkHandler.CHANNEL.sendToServer(
-                        new ServerboundToggleSpawnPacket(mobId, "all", newValue));
-                if (mobRules == null) {
-                    mobRules = new EnumMap<>(MobSpawnType.class);
-                    rules.put(mobId, mobRules);
-                }
-                for (MobSpawnType st : spawnTypes) {
-                    mobRules.put(st, newValue);
-                }
+            if (mouseX >= editBtnX && mouseX < editBtnX + EDIT_BTN_W
+                    && mouseY >= editBtnY && mouseY < editBtnY + EDIT_BTN_H) {
+                Minecraft.getInstance().setScreen(new MobSpawnEditScreen(this, mobId));
                 return true;
             }
         }
@@ -361,10 +323,34 @@ public class MobSpawnSwitchScreen extends Screen implements ClientboundSyncRules
     }
 
     @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (draggingScrollbar) {
+            draggingScrollbar = false;
+            return true;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (draggingScrollbar) {
+            int visibleHeight = listBottom - listTop;
+            int scrollBarH = Math.max(20, (int) ((double) visibleHeight * visibleHeight / contentHeight));
+            int trackHeight = visibleHeight - scrollBarH;
+            if (trackHeight > 0) {
+                double deltaY = mouseY - dragStartY;
+                int maxScroll = getMaxScroll();
+                scrollOffset = Math.max(0, Math.min(dragStartOffset + deltaY / trackHeight * maxScroll, maxScroll));
+            }
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
         if (mouseX >= listLeft && mouseX <= listRight && mouseY >= listTop && mouseY <= listBottom) {
-            int visibleHeight = listBottom - listTop;
-            int maxScroll = Math.max(0, contentHeight - visibleHeight);
+            int maxScroll = getMaxScroll();
             scrollOffset = Math.max(0, Math.min(scrollOffset - delta * 20, maxScroll));
             return true;
         }
