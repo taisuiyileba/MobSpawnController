@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "com.mobspawncontroller.mixin",
+  "refmap": "${mod_id}.refmap.json",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "MobFinalizeSpawnMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
