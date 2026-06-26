@@ -43,7 +43,7 @@ public final class MobSpawnControllerNeoForge {
         NeoForge.EVENT_BUS.addListener(this::onPositionCheck);
 
         if (FMLEnvironment.dist == Dist.CLIENT) {
-            MobSpawnControllerNeoForgeClient.init();
+            MobSpawnControllerNeoForgeClient.init(modBus);
         }
     }
 

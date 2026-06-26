@@ -41,8 +41,8 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
     private static final int ACCENT_COLOR = 0xFF63B3ED;
     private static final int PANEL_BG = 0xF015171B;
     private static final int HEADER_BG = 0xAA202630;
-    private static final int ROW_BG = 0x1AFFFFFF;
-    private static final int ROW_HOVER_BG = 0x24FFFFFF;
+    private static final int ROW_BG = 0x12FFFFFF;
+    private static final int ROW_HOVER_BG = 0x3F63B3ED;
 
     private enum DetailTab {
         SPAWN_RULES,
@@ -232,12 +232,12 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         int textX = panelLeft + 14 + iconSize + 12;
         String mainName;
         String subName;
-        if (parent.isShowTranslatedName() && entityType != null) {
+        if (entityType != null) {
             mainName = entityType.getDescription().getString();
             subName = mobId.toString();
         } else {
             mainName = mobId.toString();
-            subName = entityType != null ? entityType.getDescription().getString() : "";
+            subName = "";
         }
 
         int maxTextWidth = panelRight - textX - (activeTab == DetailTab.SPAWN_RULES ? 82 : HEADER_RESET_W + 22);

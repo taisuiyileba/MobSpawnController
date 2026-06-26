@@ -37,9 +37,17 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
     private static final int PADDING = 4;
     private static final int EDIT_BTN_W = 20;
     private static final int EDIT_BTN_H = 16;
+    private static final int PANEL_INSET = 8;
+    private static final int HEADER_HEIGHT = 78;
+    private static final int FOOTER_HEIGHT = 10;
+    private static final int ACCENT_COLOR = 0xFF63B3ED;
+    private static final int PANEL_BG = 0xF015171B;
+    private static final int HEADER_BG = 0xAA202630;
+    private static final int ROW_BG = 0x12FFFFFF;
+    private static final int ROW_HOVER_BG = 0x3F63B3ED;
+    private static final int RULES_ACCENT_COLOR = 0xFFFFAA00;
 
     private EditBox searchBox;
-    private boolean showTranslatedName = false;
     private boolean modDropdownOpen = false;
     private boolean statusDropdownOpen = false;
     private boolean attributeDropdownOpen = false;
@@ -68,6 +76,10 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
     private boolean draggingScrollbar = false;
     private double dragStartY = 0;
     private double dragStartOffset = 0;
+    private int panelLeft;
+    private int panelRight;
+    private int panelTop;
+    private int panelBottom;
     private int listTop;
     private int listBottom;
     private int listLeft;
@@ -82,24 +94,28 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
 
     @Override
     protected void init() {
-        int centerX = this.width / 2;
         int panelWidth = Math.min(this.width - 32, 440);
-        listLeft = centerX - panelWidth / 2;
-        listRight = centerX + panelWidth / 2;
-        listTop = 78;
-        listBottom = this.height - 10;
+        int panelHeight = Math.max(170, this.height - 32);
+        panelLeft = (this.width - panelWidth) / 2;
+        panelRight = panelLeft + panelWidth;
+        panelTop = (this.height - panelHeight) / 2;
+        panelBottom = panelTop + panelHeight;
+        listLeft = panelLeft + PANEL_INSET;
+        listRight = panelRight - PANEL_INSET;
+        listTop = panelTop + HEADER_HEIGHT;
+        listBottom = panelBottom - FOOTER_HEIGHT;
 
-        int searchWidth = panelWidth - 92;
-        searchBox = new EditBox(this.font, listLeft, 29, searchWidth, 18, Component.empty());
+        int searchWidth = panelWidth - PANEL_INSET * 2 - 96;
+        int searchY = panelTop + 21;
+        searchBox = new EditBox(this.font, listLeft, searchY, searchWidth, 18, Component.empty());
         searchBox.setMaxLength(128);
         searchBox.setResponder(text -> applyFilter());
         this.addRenderableWidget(searchBox);
 
-        this.addRenderableWidget(Button.builder(Component.literal("ID"), button -> {
-            showTranslatedName = !showTranslatedName;
-            button.setMessage(Component.literal(showTranslatedName ? "Name" : "ID"));
-            applyFilter();
-        }).bounds(listLeft + searchWidth + 4, 28, 84, 20).build());
+        this.addRenderableWidget(Button.builder(Component.literal("\uD83D\uDD0D"), button -> {
+            this.setFocused(searchBox);
+            searchBox.setFocused(true);
+        }).bounds(listLeft + searchWidth + 4, searchY - 1, 92, 20).build());
 
         allMobIds = BuiltInRegistries.ENTITY_TYPE.entrySet().stream()
                 .filter(entry -> entry.getValue().getCategory() != MobCategory.MISC)
@@ -133,10 +149,6 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
 
     public Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> getRules() {
         return rules;
-    }
-
-    public boolean isShowTranslatedName() {
-        return showTranslatedName;
     }
 
     public Map<EntityType<?>, Entity> getEntityCache() {
@@ -222,19 +234,21 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        this.renderBackground(guiGraphics, mouseX, mouseY, partialTick);
+        renderPanel(guiGraphics);
         super.render(guiGraphics, mouseX, mouseY, partialTick);
-        guiGraphics.drawCenteredString(this.font, this.title, this.width / 2, 10, 0xFFFFFF);
+        guiGraphics.drawCenteredString(this.font, this.title, this.width / 2, panelTop + 8, 0xFFFFFFFF);
 
-        int panelWidth = Math.min(this.width - 32, 440);
-        int searchWidth = panelWidth - 92;
-        int totalDropdownWidth = searchWidth + 88;
+        int panelWidth = panelRight - panelLeft;
+        int searchWidth = panelWidth - PANEL_INSET * 2 - 96;
+        int totalDropdownWidth = searchWidth + 92;
         int modDropdownWidth = Math.max(86, totalDropdownWidth / 4);
         int statusDropdownWidth = Math.max(104, totalDropdownWidth / 3);
         int attributeDropdownWidth = totalDropdownWidth - modDropdownWidth - statusDropdownWidth - 8;
         int modDropdownX = listLeft;
         int statusDropdownX = listLeft + modDropdownWidth + 4;
         int attributeDropdownX = statusDropdownX + statusDropdownWidth + 4;
-        int dropdownY = 52;
+        int dropdownY = panelTop + 50;
         int dropdownHeight = 18;
         int visibleHeight = listBottom - listTop;
 
@@ -246,6 +260,9 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
             renderScrollbar(guiGraphics, visibleHeight);
         }
 
+        guiGraphics.fill(panelLeft + PANEL_INSET, listTop - 1, panelRight - PANEL_INSET, listTop, 0xFF303742);
+        guiGraphics.fill(panelLeft + PANEL_INSET, listBottom, panelRight - PANEL_INSET, listBottom + 1, 0xFF303742);
+
         guiGraphics.pose().pushPose();
         guiGraphics.pose().translate(0, 0, 400);
         renderDropdown(guiGraphics, mouseX, mouseY, modDropdownX, dropdownY, modDropdownWidth, dropdownHeight,
@@ -255,6 +272,16 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
         renderDropdown(guiGraphics, mouseX, mouseY, attributeDropdownX, dropdownY, attributeDropdownWidth, dropdownHeight,
                 selectedAttributeStatus, attributeDropdownOpen, attributeStatusOptions);
         guiGraphics.pose().popPose();
+    }
+
+    private void renderPanel(GuiGraphics guiGraphics) {
+        guiGraphics.fill(panelLeft, panelTop, panelRight, panelBottom, PANEL_BG);
+        guiGraphics.fill(panelLeft + 1, panelTop + 1, panelRight - 1, listTop, HEADER_BG);
+        guiGraphics.fill(panelLeft, panelTop, panelRight, panelTop + 1, 0xFF4B5563);
+        guiGraphics.fill(panelLeft, panelBottom - 1, panelRight, panelBottom, 0xFF4B5563);
+        guiGraphics.fill(panelLeft, panelTop, panelLeft + 1, panelBottom, 0xFF4B5563);
+        guiGraphics.fill(panelRight - 1, panelTop, panelRight, panelBottom, 0xFF4B5563);
+        guiGraphics.fill(panelLeft + 1, panelTop + 1, panelLeft + 3, panelBottom - 1, 0x6657A6FF);
     }
 
     private void renderRows(GuiGraphics guiGraphics, int mouseX, int mouseY) {
@@ -271,10 +298,16 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
             boolean hasAnyRule = mobRules != null && !mobRules.isEmpty();
             boolean hasAttributeOverride = attributeModifiedMobIds.contains(mobId);
             boolean rowHovered = mouseX >= listLeft && mouseX < listRight && mouseY >= rowY && mouseY < rowY + ROW_HEIGHT;
-            guiGraphics.fill(listLeft, rowY, listRight, rowY + ROW_HEIGHT - 1,
-                    rowHovered ? 0x2AFFFFFF : hasAnyRule ? 0x24FFAA00 : 0x18FFFFFF);
+            if (idx % 2 == 0) {
+                guiGraphics.fill(listLeft, rowY, listRight, rowY + ROW_HEIGHT - 1, ROW_BG);
+            }
+            if (rowHovered) {
+                guiGraphics.fill(listLeft, rowY, listRight, rowY + ROW_HEIGHT - 1, ROW_HOVER_BG);
+            }
             if (hasAttributeOverride) {
-                guiGraphics.fill(listLeft, rowY, listLeft + 3, rowY + ROW_HEIGHT - 1, 0xFF63B3ED);
+                guiGraphics.fill(listLeft, rowY, listLeft + 3, rowY + ROW_HEIGHT - 1, ACCENT_COLOR);
+            } else if (hasAnyRule) {
+                guiGraphics.fill(listLeft, rowY, listLeft + 3, rowY + ROW_HEIGHT - 1, RULES_ACCENT_COLOR);
             }
 
             EntityType<?> entityType = BuiltInRegistries.ENTITY_TYPE.get(mobId);
@@ -284,9 +317,12 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
                         rowY + ROW_HEIGHT / 2 + 2, iconSize, entityCache);
             }
 
-            String displayName = showTranslatedName && entityType != null
-                    ? entityType.getDescription().getString()
-                    : mobId.toString();
+            String displayName;
+            if (entityType != null) {
+                displayName = entityType.getDescription().getString() + "/" + mobId;
+            } else {
+                displayName = mobId.toString();
+            }
 
             int editBtnX = listRight - EDIT_BTN_W - PADDING - 6;
             int editBtnY = rowY + (ROW_HEIGHT - EDIT_BTN_H) / 2;
@@ -298,57 +334,60 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
             boolean hovered = mouseX >= editBtnX && mouseX < editBtnX + EDIT_BTN_W
                     && mouseY >= editBtnY && mouseY < editBtnY + EDIT_BTN_H;
             guiGraphics.fill(editBtnX, editBtnY, editBtnX + EDIT_BTN_W, editBtnY + EDIT_BTN_H,
-                    hovered ? 0xFF4488CC : 0xFF336699);
+                    hovered ? 0xFF2B3442 : 0xFF171C24);
+            guiGraphics.renderOutline(editBtnX, editBtnY, EDIT_BTN_W, EDIT_BTN_H,
+                    hovered ? ACCENT_COLOR : 0xFF4B5563);
             guiGraphics.drawCenteredString(this.font, "\u270E", editBtnX + EDIT_BTN_W / 2,
-                    editBtnY + (EDIT_BTN_H - font.lineHeight) / 2 + 1, 0xFFFFFF);
+                    editBtnY + (EDIT_BTN_H - font.lineHeight) / 2 + 1, hovered ? 0xFFFFFFFF : 0xFFE5E7EB);
         }
     }
 
     private void renderScrollbar(GuiGraphics guiGraphics, int visibleHeight) {
-        int scrollBarX = listRight - 6;
-        int scrollBarW = 5;
+        int scrollBarX = listRight - 8;
+        int scrollBarW = 4;
         int scrollBarH = Math.max(20, (int) ((double) visibleHeight * visibleHeight / contentHeight));
         int maxScroll = getMaxScroll();
         int scrollBarY = listTop + (maxScroll > 0
                 ? (int) (scrollOffset / maxScroll * (visibleHeight - scrollBarH)) : 0);
-        guiGraphics.fill(scrollBarX, listTop, scrollBarX + scrollBarW, listBottom, 0x40FFFFFF);
+        guiGraphics.fill(scrollBarX, listTop, scrollBarX + scrollBarW, listBottom, 0x40000000);
         guiGraphics.fill(scrollBarX, scrollBarY, scrollBarX + scrollBarW, scrollBarY + scrollBarH, 0xAAFFFFFF);
     }
 
     private void renderDropdown(GuiGraphics guiGraphics, int mouseX, int mouseY, int x, int y, int width, int height,
                                 String selected, boolean open, List<String> options) {
-        guiGraphics.fill(x, y, x + width, y + height, 0xDD000000);
-        guiGraphics.renderOutline(x, y, width, height, open ? 0xFFFFFFFF : 0xFFAAAAAA);
+        boolean hovered = mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
+        guiGraphics.fill(x, y, x + width, y + height, 0xFF111827);
+        guiGraphics.renderOutline(x, y, width, height, open ? ACCENT_COLOR : hovered ? 0xFF7DD3FC : 0xFF4B5563);
 
         String text = optionText(selected);
         int maxTextWidth = width - 16;
         if (this.font.width(text) > maxTextWidth) {
             text = this.font.plainSubstrByWidth(text, maxTextWidth - this.font.width("...")) + "...";
         }
-        guiGraphics.drawString(this.font, text, x + 4, y + 5, 0xFFFFFF);
-        guiGraphics.drawString(this.font, open ? "^" : "v", x + width - 10, y + 5, 0xFFAAAAAA);
+        guiGraphics.drawString(this.font, text, x + 4, y + 5, 0xFFE5E7EB);
+        guiGraphics.drawString(this.font, open ? "^" : "v", x + width - 10, y + 5, 0xFF94A3B8);
 
         if (!open) {
             return;
         }
 
         int listH = Math.min(options.size() * 14, selected.equals(selectedMod) ? 140 : options.size() * 14);
-        guiGraphics.fill(x, y + height, x + width, y + height + listH, 0xEE000000);
-        guiGraphics.renderOutline(x, y + height, width, listH, 0xFFFFFFFF);
+        guiGraphics.fill(x, y + height, x + width, y + height + listH, 0xEE111827);
+        guiGraphics.renderOutline(x, y + height, width, listH, 0xFF4B5563);
         for (int i = 0; i < options.size(); i++) {
             int itemY = y + height + i * 14;
             if (itemY + 14 > y + height + listH) {
                 break;
             }
-            boolean hovered = mouseX >= x && mouseX < x + width && mouseY >= itemY && mouseY < itemY + 14;
-            if (hovered) {
+            boolean itemHovered = mouseX >= x && mouseX < x + width && mouseY >= itemY && mouseY < itemY + 14;
+            if (itemHovered) {
                 guiGraphics.fill(x + 1, itemY, x + width - 1, itemY + 14, 0xFF444444);
             }
             String itemText = optionText(options.get(i));
             if (this.font.width(itemText) > maxTextWidth) {
                 itemText = this.font.plainSubstrByWidth(itemText, maxTextWidth - this.font.width("...")) + "...";
             }
-            guiGraphics.drawString(this.font, itemText, x + 4, itemY + 3, hovered ? 0xFFFFFF : 0xFFDDDDDD);
+            guiGraphics.drawString(this.font, itemText, x + 4, itemY + 3, itemHovered ? 0xFFFFFFFF : 0xFFB6C2D0);
         }
     }
 
@@ -429,16 +468,16 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
             return true;
         }
 
-        int panelWidth = Math.min(this.width - 32, 440);
-        int searchWidth = panelWidth - 92;
-        int totalDropdownWidth = searchWidth + 88;
+        int panelWidth = panelRight - panelLeft;
+        int searchWidth = panelWidth - PANEL_INSET * 2 - 96;
+        int totalDropdownWidth = searchWidth + 92;
         int modDropdownWidth = Math.max(86, totalDropdownWidth / 4);
         int statusDropdownWidth = Math.max(104, totalDropdownWidth / 3);
         int attributeDropdownWidth = totalDropdownWidth - modDropdownWidth - statusDropdownWidth - 8;
         int modDropdownX = listLeft;
         int statusDropdownX = listLeft + modDropdownWidth + 4;
         int attributeDropdownX = statusDropdownX + statusDropdownWidth + 4;
-        int dropdownY = 52;
+        int dropdownY = panelTop + 50;
         int dropdownHeight = 18;
 
         if (handleDropdownClick(mouseX, mouseY, modDropdownX, dropdownY, modDropdownWidth, dropdownHeight,
@@ -455,8 +494,8 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
         }
 
         if (contentHeight > listBottom - listTop) {
-            int scrollBarX = listRight - 6;
-            int scrollBarW = 5;
+            int scrollBarX = listRight - 8;
+            int scrollBarW = 4;
             int scrollBarH = Math.max(20, (int) ((double) (listBottom - listTop) * (listBottom - listTop) / contentHeight));
             int maxScroll = getMaxScroll();
             int scrollBarY = listTop + (maxScroll > 0
