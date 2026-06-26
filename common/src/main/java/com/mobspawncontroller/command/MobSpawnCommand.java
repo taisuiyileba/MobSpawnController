@@ -67,7 +67,7 @@ public final class MobSpawnCommand {
                                         .then(Commands.argument("allowed", BoolArgumentType.bool())
                                                 .executes(MobSpawnCommand::setSpawn)))));
         dispatcher.register(
-                Commands.literal("mss")
+                Commands.literal("msc")
                         .requires(source -> source.hasPermission(2))
                         .redirect(dispatcher.getRoot().getChild("mobspawncontroller")));
     }

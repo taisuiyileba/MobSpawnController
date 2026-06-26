@@ -39,7 +39,6 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
     private static final int EDIT_BTN_H = 16;
 
     private EditBox searchBox;
-    private boolean showTranslatedName = false;
     private boolean modDropdownOpen = false;
     private boolean statusDropdownOpen = false;
     private boolean attributeDropdownOpen = false;
@@ -95,10 +94,9 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
         searchBox.setResponder(text -> applyFilter());
         this.addRenderableWidget(searchBox);
 
-        this.addRenderableWidget(Button.builder(Component.literal("ID"), button -> {
-            showTranslatedName = !showTranslatedName;
-            button.setMessage(Component.literal(showTranslatedName ? "Name" : "ID"));
-            applyFilter();
+        this.addRenderableWidget(Button.builder(Component.literal("\uD83D\uDD0D"), button -> {
+            this.setFocused(searchBox);
+            searchBox.setFocused(true);
         }).bounds(listLeft + searchWidth + 4, 28, 84, 20).build());
 
         allMobIds = BuiltInRegistries.ENTITY_TYPE.entrySet().stream()
@@ -133,10 +131,6 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
 
     public Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> getRules() {
         return rules;
-    }
-
-    public boolean isShowTranslatedName() {
-        return showTranslatedName;
     }
 
     public Map<EntityType<?>, Entity> getEntityCache() {
@@ -284,9 +278,12 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
                         rowY + ROW_HEIGHT / 2 + 2, iconSize, entityCache);
             }
 
-            String displayName = showTranslatedName && entityType != null
-                    ? entityType.getDescription().getString()
-                    : mobId.toString();
+            String displayName;
+            if (entityType != null) {
+                displayName = entityType.getDescription().getString() + "/" + mobId;
+            } else {
+                displayName = mobId.toString();
+            }
 
             int editBtnX = listRight - EDIT_BTN_W - PADDING - 6;
             int editBtnY = rowY + (ROW_HEIGHT - EDIT_BTN_H) / 2;
