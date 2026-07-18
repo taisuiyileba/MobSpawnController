@@ -19,12 +19,16 @@
     ]
   },
   "mixins": [
-    "mobspawncontroller.mixins.json"
+    "mobspawncontroller.mixins.json",
+    "mobspawncontroller.fabric.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=${fabric_loader_version}",
     "fabric-api": ">=${fabric_version}",
     "minecraft": "${fabric_minecraft_version_range}",
     "java": ">=${java_version}"
+  },
+  "suggests": {
+    "sereneseasons": "*"
   }
 }

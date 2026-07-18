@@ -19,5 +19,8 @@ hs_err_pid*
 
 # Common working directory
 run
+forge/runs
+fabric/runs
 libs
 InControl-1.20
+SereneSeasons-1.20.1

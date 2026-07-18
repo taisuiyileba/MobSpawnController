@@ -19,12 +19,8 @@ minecraft {
                 }
             }
         }
-        client {
-            property 'forge.enabledGameTestNamespaces', mod_id
-        }
-        server {
-            property 'forge.enabledGameTestNamespaces', mod_id
-        }
+        client {}
+        server {}
     }
 }
 
@@ -51,10 +47,12 @@ dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
 
-    runtimeOnly fg.deobf("curse.maven:xaeros-minimap-263420:8046960")
-    runtimeOnly fg.deobf("curse.maven:xaeros-world-map-317780:8042194")
-    runtimeOnly fg.deobf("blank:alexsmobs:1.22.9")
-    runtimeOnly fg.deobf("blank:citadel:2.6.3-1.20.1")
+//    runtimeOnly fg.deobf("curse.maven:xaeros-minimap-263420:8046960")
+//    runtimeOnly fg.deobf("curse.maven:xaeros-world-map-317780:8042194")
+//    runtimeOnly fg.deobf("blank:alexsmobs:1.22.9")
+//    runtimeOnly fg.deobf("blank:citadel:2.6.3-1.20.1")
+    implementation fg.deobf("curse.maven:serene-seasons-291874:5790633")
+    implementation fg.deobf("curse.maven:glitchcore-955399:5787839")
 }
 
 jar {

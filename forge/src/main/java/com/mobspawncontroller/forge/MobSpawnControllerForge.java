@@ -6,16 +6,20 @@ import com.mobspawncontroller.command.MobSpawnCommand;
 import com.mobspawncontroller.command.MobSpawnManager;
 import com.mobspawncontroller.network.ClientboundSyncAttributesPayload;
 import com.mobspawncontroller.network.ClientboundSyncRulesPayload;
+import com.mobspawncontroller.network.ClientboundSyncStructuresPayload;
 import com.mobspawncontroller.network.ServerboundRequestAttributesPayload;
 import com.mobspawncontroller.network.ServerboundRequestRulesPayload;
+import com.mobspawncontroller.network.ServerboundRequestStructuresPayload;
 import com.mobspawncontroller.network.ServerboundSetAttributesPayload;
+import com.mobspawncontroller.network.ServerboundSetNaturalSpawnPayload;
 import com.mobspawncontroller.network.ServerboundToggleSpawnPayload;
+import com.mobspawncontroller.natural.SpawnInterception;
 import com.mobspawncontroller.platform.NetworkBridge;
+import com.mobspawncontroller.platform.ModCompat;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.MobSpawnType;
-import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.entity.living.MobSpawnEvent;
@@ -23,7 +27,7 @@ import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.Event;
 import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.fml.DistExecutor;
+import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
@@ -38,7 +42,7 @@ import java.util.function.Supplier;
 @Mod(MobSpawnController.MOD_ID)
 public final class MobSpawnControllerForge {
 
-    private static final String PROTOCOL_VERSION = "1";
+    private static final String PROTOCOL_VERSION = "6";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             MobSpawnController.id("main"),
             () -> PROTOCOL_VERSION,
@@ -46,19 +50,19 @@ public final class MobSpawnControllerForge {
             NetworkRegistry.acceptMissingOr(PROTOCOL_VERSION)
     );
 
-    public MobSpawnControllerForge() {
+    public MobSpawnControllerForge(FMLJavaModLoadingContext loadingContext) {
+        ModCompat.setModLoadedChecker(modId -> ModList.get().isLoaded(modId));
+        SpawnInterception.setPlatformHandlesFinalizeSpawn(true);
         MobSpawnController.init();
         NetworkBridge.setToPlayerSender(MobSpawnControllerForge::sendToPlayer);
 
-        IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
+        IEventBus modBus = loadingContext.getModEventBus();
         modBus.addListener(this::commonSetup);
         MinecraftForge.EVENT_BUS.addListener(this::onServerStarting);
         MinecraftForge.EVENT_BUS.addListener(this::onServerStopping);
         MinecraftForge.EVENT_BUS.addListener(this::onRegisterCommands);
         MinecraftForge.EVENT_BUS.addListener(this::onSpawnPlacementCheck);
         MinecraftForge.EVENT_BUS.addListener(this::onFinalizeSpawn);
-
-        DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> MobSpawnControllerForgeClient::init);
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
@@ -91,6 +95,18 @@ public final class MobSpawnControllerForge {
                 .consumerMainThread((payload, context) -> handleServer(payload, context,
                         ServerboundSetAttributesPayload::handle))
                 .add();
+        CHANNEL.messageBuilder(ServerboundSetNaturalSpawnPayload.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(ServerboundSetNaturalSpawnPayload::write)
+                .decoder(ServerboundSetNaturalSpawnPayload::read)
+                .consumerMainThread((payload, context) -> handleServer(payload, context,
+                        ServerboundSetNaturalSpawnPayload::handle))
+                .add();
+        CHANNEL.messageBuilder(ServerboundRequestStructuresPayload.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(ServerboundRequestStructuresPayload::write)
+                .decoder(ServerboundRequestStructuresPayload::read)
+                .consumerMainThread((payload, context) -> handleServer(payload, context,
+                        ServerboundRequestStructuresPayload::handle))
+                .add();
         CHANNEL.messageBuilder(ClientboundSyncRulesPayload.class, id++, NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(ClientboundSyncRulesPayload::write)
                 .decoder(ClientboundSyncRulesPayload::read)
@@ -99,9 +115,17 @@ public final class MobSpawnControllerForge {
                     context.get().setPacketHandled(true);
                 })
                 .add();
-        CHANNEL.messageBuilder(ClientboundSyncAttributesPayload.class, id, NetworkDirection.PLAY_TO_CLIENT)
+        CHANNEL.messageBuilder(ClientboundSyncAttributesPayload.class, id++, NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(ClientboundSyncAttributesPayload::write)
                 .decoder(ClientboundSyncAttributesPayload::read)
+                .consumerMainThread((payload, context) -> {
+                    ClientRuleSync.handle(payload);
+                    context.get().setPacketHandled(true);
+                })
+                .add();
+        CHANNEL.messageBuilder(ClientboundSyncStructuresPayload.class, id, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(ClientboundSyncStructuresPayload::write)
+                .decoder(ClientboundSyncStructuresPayload::read)
                 .consumerMainThread((payload, context) -> {
                     ClientRuleSync.handle(payload);
                     context.get().setPacketHandled(true);
@@ -146,12 +170,11 @@ public final class MobSpawnControllerForge {
     }
 
     private void onFinalizeSpawn(MobSpawnEvent.FinalizeSpawn event) {
-        ResourceLocation mobId = BuiltInRegistries.ENTITY_TYPE.getKey(event.getEntity().getType());
-        MobSpawnType type = event.getSpawnType();
-        Boolean allowed = MobSpawnManager.getAllowed(mobId, type);
-        if (allowed != null && !allowed) {
+        if (!MobSpawnManager.isSpawnAllowed(event.getEntity(), event.getLevel(), event.getSpawnType())) {
             event.setSpawnCancelled(true);
+            return;
         }
+        MobSpawnManager.applyAttributeOverrides(event.getEntity());
     }
 
     private interface ServerPayloadHandler<T> {

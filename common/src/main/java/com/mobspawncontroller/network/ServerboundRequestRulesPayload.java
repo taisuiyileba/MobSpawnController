@@ -30,6 +30,6 @@ public record ServerboundRequestRulesPayload() {
         Map<net.minecraft.resources.ResourceLocation, EnumMap<MobSpawnType, Boolean>> allRules =
                 MobSpawnManager.getAllRules();
         NetworkBridge.sendToPlayer(player, new ClientboundSyncRulesPayload(allRules,
-                MobSpawnManager.getAttributeOverrideMobs()));
+                MobSpawnManager.getAttributeOverrideMobs(), MobSpawnManager.getAllNaturalSpawnSettings()));
     }
 }

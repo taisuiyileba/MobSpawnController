@@ -1,6 +1,7 @@
 package com.mobspawncontroller.network;
 
 import com.mobspawncontroller.MobSpawnController;
+import com.mobspawncontroller.natural.NaturalSpawnSettings;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.MobSpawnType;
@@ -12,7 +13,8 @@ import java.util.Map;
 import java.util.Set;
 
 public record ClientboundSyncRulesPayload(Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> rules,
-                                          Set<ResourceLocation> attributeModifiedMobs) {
+                                          Set<ResourceLocation> attributeModifiedMobs,
+                                          Map<ResourceLocation, NaturalSpawnSettings> naturalSpawnSettings) {
 
     public static final ResourceLocation ID = MobSpawnController.id("sync_rules");
 
@@ -38,7 +40,12 @@ public record ClientboundSyncRulesPayload(Map<ResourceLocation, EnumMap<MobSpawn
         for (int i = 0; i < attributeSize; i++) {
             attributeModifiedMobs.add(buf.readResourceLocation());
         }
-        return new ClientboundSyncRulesPayload(rules, attributeModifiedMobs);
+        int naturalSize = buf.readVarInt();
+        Map<ResourceLocation, NaturalSpawnSettings> naturalSpawnSettings = new HashMap<>();
+        for (int i = 0; i < naturalSize; i++) {
+            naturalSpawnSettings.put(buf.readResourceLocation(), NaturalSpawnSettings.read(buf));
+        }
+        return new ClientboundSyncRulesPayload(rules, attributeModifiedMobs, naturalSpawnSettings);
     }
 
     public static void write(ClientboundSyncRulesPayload payload, FriendlyByteBuf buf) {
@@ -53,5 +60,10 @@ public record ClientboundSyncRulesPayload(Map<ResourceLocation, EnumMap<MobSpawn
         });
         buf.writeVarInt(payload.attributeModifiedMobs.size());
         payload.attributeModifiedMobs.forEach(buf::writeResourceLocation);
+        buf.writeVarInt(payload.naturalSpawnSettings.size());
+        payload.naturalSpawnSettings.forEach((mobId, settings) -> {
+            buf.writeResourceLocation(mobId);
+            settings.write(buf);
+        });
     }
 }

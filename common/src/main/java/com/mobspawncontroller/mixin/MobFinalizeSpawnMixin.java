@@ -1,9 +1,8 @@
 package com.mobspawncontroller.mixin;
 
 import com.mobspawncontroller.command.MobSpawnManager;
-import net.minecraft.core.registries.BuiltInRegistries;
+import com.mobspawncontroller.natural.SpawnInterception;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobSpawnType;
@@ -19,13 +18,14 @@ public abstract class MobFinalizeSpawnMixin {
 
     @Inject(method = "finalizeSpawn", at = @At("HEAD"), cancellable = true)
     private void mobspawncontroller$cancelDisabledSpawn(ServerLevelAccessor level, DifficultyInstance difficulty,
-                                                    MobSpawnType spawnType, SpawnGroupData spawnGroupData,
-                                                    CompoundTag spawnTag,
-                                                    CallbackInfoReturnable<SpawnGroupData> callback) {
+                                                         MobSpawnType spawnType, SpawnGroupData spawnGroupData,
+                                                         CompoundTag spawnTag,
+                                                         CallbackInfoReturnable<SpawnGroupData> callback) {
         Mob mob = (Mob) (Object) this;
-        ResourceLocation mobId = BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType());
-        Boolean allowed = MobSpawnManager.getAllowed(mobId, spawnType);
-        if (allowed != null && !allowed) {
+        if (SpawnInterception.isHandledBeforeMobFinalizeSpawn(mob)) {
+            return;
+        }
+        if (!MobSpawnManager.isSpawnAllowed(mob, level, spawnType)) {
             mob.discard();
             callback.setReturnValue(spawnGroupData);
             return;

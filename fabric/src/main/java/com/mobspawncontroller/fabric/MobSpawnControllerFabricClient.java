@@ -4,9 +4,12 @@ import com.mobspawncontroller.client.ClientRuleSync;
 import com.mobspawncontroller.client.gui.MobSpawnControllerScreen;
 import com.mobspawncontroller.network.ClientboundSyncAttributesPayload;
 import com.mobspawncontroller.network.ClientboundSyncRulesPayload;
+import com.mobspawncontroller.network.ClientboundSyncStructuresPayload;
 import com.mobspawncontroller.network.ServerboundRequestAttributesPayload;
 import com.mobspawncontroller.network.ServerboundRequestRulesPayload;
+import com.mobspawncontroller.network.ServerboundRequestStructuresPayload;
 import com.mobspawncontroller.network.ServerboundSetAttributesPayload;
+import com.mobspawncontroller.network.ServerboundSetNaturalSpawnPayload;
 import com.mobspawncontroller.network.ServerboundToggleSpawnPayload;
 import com.mobspawncontroller.platform.NetworkBridge;
 import com.mojang.blaze3d.platform.InputConstants;
@@ -44,6 +47,11 @@ public final class MobSpawnControllerFabricClient implements ClientModInitialize
                     ClientboundSyncAttributesPayload payload = ClientboundSyncAttributesPayload.read(buf);
                     client.execute(() -> ClientRuleSync.handle(payload));
                 });
+        ClientPlayNetworking.registerGlobalReceiver(ClientboundSyncStructuresPayload.ID,
+                (client, handler, buf, responseSender) -> {
+                    ClientboundSyncStructuresPayload payload = ClientboundSyncStructuresPayload.read(buf);
+                    client.execute(() -> ClientRuleSync.handle(payload));
+                });
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (OPEN_GUI_KEY.consumeClick()) {
@@ -69,6 +77,12 @@ public final class MobSpawnControllerFabricClient implements ClientModInitialize
         } else if (payload instanceof ServerboundSetAttributesPayload setAttributes) {
             ServerboundSetAttributesPayload.write(setAttributes, buf);
             ClientPlayNetworking.send(ServerboundSetAttributesPayload.ID, buf);
+        } else if (payload instanceof ServerboundSetNaturalSpawnPayload naturalSpawn) {
+            ServerboundSetNaturalSpawnPayload.write(naturalSpawn, buf);
+            ClientPlayNetworking.send(ServerboundSetNaturalSpawnPayload.ID, buf);
+        } else if (payload instanceof ServerboundRequestStructuresPayload requestStructures) {
+            ServerboundRequestStructuresPayload.write(requestStructures, buf);
+            ClientPlayNetworking.send(ServerboundRequestStructuresPayload.ID, buf);
         }
     }
 }

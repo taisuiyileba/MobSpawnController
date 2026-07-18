@@ -8,6 +8,7 @@ import net.minecraft.world.level.storage.LevelResource;
 import org.slf4j.Logger;
 
 import java.nio.file.Path;
+import java.util.Objects;
 
 public final class MobSpawnController {
 
@@ -18,7 +19,8 @@ public final class MobSpawnController {
     }
 
     public static ResourceLocation id(String path) {
-        return new ResourceLocation(MOD_ID, path);
+        return Objects.requireNonNull(ResourceLocation.tryBuild(MOD_ID, path),
+                () -> "Invalid MobSpawnController resource path: " + path);
     }
 
     public static void init() {
