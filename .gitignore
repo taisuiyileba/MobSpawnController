@@ -19,4 +19,8 @@ hs_err_pid*
 
 # Common working directory
 run
+logs
+*/logs
+fabric/runs
+neoforge/runs
 libs

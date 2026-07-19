@@ -2,13 +2,13 @@ package com.mobspawncontroller.client.gui;
 
 import com.mobspawncontroller.client.ClientRuleSync;
 import com.mobspawncontroller.network.ServerboundRequestRulesPayload;
+import com.mobspawncontroller.natural.NaturalSpawnSettings;
 import com.mobspawncontroller.platform.NetworkBridge;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -31,7 +31,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.Receiver {
+public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements ClientRuleSync.Receiver {
 
     private static final int ROW_HEIGHT = 24;
     private static final int PADDING = 4;
@@ -46,6 +46,7 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
     private static final int ROW_BG = 0x12FFFFFF;
     private static final int ROW_HOVER_BG = 0x3F63B3ED;
     private static final int RULES_ACCENT_COLOR = 0xFFFFAA00;
+    private static final int NATURAL_ACCENT_COLOR = 0xFF34D399;
 
     private EditBox searchBox;
     private boolean modDropdownOpen = false;
@@ -64,11 +65,14 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
     private final List<String> attributeStatusOptions = Arrays.asList(
             "gui.mobspawncontroller.filter.all_attributes",
             "gui.mobspawncontroller.filter.attributes_modified",
-            "gui.mobspawncontroller.filter.attributes_unmodified"
+            "gui.mobspawncontroller.filter.attributes_unmodified",
+            "gui.mobspawncontroller.filter.natural_modified",
+            "gui.mobspawncontroller.filter.natural_unmodified"
     );
 
     private Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> rules = new HashMap<>();
     private Set<ResourceLocation> attributeModifiedMobIds = new HashSet<>();
+    private Map<ResourceLocation, NaturalSpawnSettings> naturalSpawnSettings = new HashMap<>();
     private List<ResourceLocation> allMobIds = new ArrayList<>();
     private List<ResourceLocation> filteredMobIds = new ArrayList<>();
 
@@ -147,12 +151,22 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
         applyFilter();
     }
 
+    @Override
+    public void onNaturalSpawnSettingsReceived(Map<ResourceLocation, NaturalSpawnSettings> settings) {
+        this.naturalSpawnSettings = new HashMap<>(settings);
+        applyFilter();
+    }
+
     public Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> getRules() {
         return rules;
     }
 
     public Map<EntityType<?>, Entity> getEntityCache() {
         return entityCache;
+    }
+
+    public Map<ResourceLocation, NaturalSpawnSettings> getNaturalSpawnSettings() {
+        return naturalSpawnSettings;
     }
 
     private void applyFilter() {
@@ -217,6 +231,13 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
         if (selectedAttributeStatus.equals("gui.mobspawncontroller.filter.attributes_unmodified")) {
             return !modified;
         }
+        boolean naturalModified = naturalSpawnSettings.containsKey(id);
+        if (selectedAttributeStatus.equals("gui.mobspawncontroller.filter.natural_modified")) {
+            return naturalModified;
+        }
+        if (selectedAttributeStatus.equals("gui.mobspawncontroller.filter.natural_unmodified")) {
+            return !naturalModified;
+        }
         return true;
     }
 
@@ -234,7 +255,7 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        this.renderBackground(guiGraphics, mouseX, mouseY, partialTick);
+        this.renderUnblurredBackground(guiGraphics);
         renderPanel(guiGraphics);
         super.render(guiGraphics, mouseX, mouseY, partialTick);
         guiGraphics.drawCenteredString(this.font, this.title, this.width / 2, panelTop + 8, 0xFFFFFFFF);
@@ -297,6 +318,7 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
             EnumMap<MobSpawnType, Boolean> mobRules = rules.get(mobId);
             boolean hasAnyRule = mobRules != null && !mobRules.isEmpty();
             boolean hasAttributeOverride = attributeModifiedMobIds.contains(mobId);
+            boolean hasNaturalSettings = naturalSpawnSettings.containsKey(mobId);
             boolean rowHovered = mouseX >= listLeft && mouseX < listRight && mouseY >= rowY && mouseY < rowY + ROW_HEIGHT;
             if (idx % 2 == 0) {
                 guiGraphics.fill(listLeft, rowY, listRight, rowY + ROW_HEIGHT - 1, ROW_BG);
@@ -304,10 +326,17 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
             if (rowHovered) {
                 guiGraphics.fill(listLeft, rowY, listRight, rowY + ROW_HEIGHT - 1, ROW_HOVER_BG);
             }
+            int accentX = listLeft;
             if (hasAttributeOverride) {
-                guiGraphics.fill(listLeft, rowY, listLeft + 3, rowY + ROW_HEIGHT - 1, ACCENT_COLOR);
-            } else if (hasAnyRule) {
-                guiGraphics.fill(listLeft, rowY, listLeft + 3, rowY + ROW_HEIGHT - 1, RULES_ACCENT_COLOR);
+                guiGraphics.fill(accentX, rowY, accentX + 2, rowY + ROW_HEIGHT - 1, ACCENT_COLOR);
+                accentX += 2;
+            }
+            if (hasNaturalSettings) {
+                guiGraphics.fill(accentX, rowY, accentX + 2, rowY + ROW_HEIGHT - 1, NATURAL_ACCENT_COLOR);
+                accentX += 2;
+            }
+            if (hasAnyRule) {
+                guiGraphics.fill(accentX, rowY, accentX + 2, rowY + ROW_HEIGHT - 1, RULES_ACCENT_COLOR);
             }
 
             EntityType<?> entityType = BuiltInRegistries.ENTITY_TYPE.get(mobId);

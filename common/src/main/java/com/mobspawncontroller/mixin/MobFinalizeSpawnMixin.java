@@ -1,8 +1,7 @@
 package com.mobspawncontroller.mixin;
 
 import com.mobspawncontroller.command.MobSpawnManager;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import com.mobspawncontroller.natural.SpawnInterception;
 import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobSpawnType;
@@ -21,9 +20,10 @@ public abstract class MobFinalizeSpawnMixin {
                                                     MobSpawnType spawnType, SpawnGroupData spawnGroupData,
                                                     CallbackInfoReturnable<SpawnGroupData> callback) {
         Mob mob = (Mob) (Object) this;
-        ResourceLocation mobId = BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType());
-        Boolean allowed = MobSpawnManager.getAllowed(mobId, spawnType);
-        if (allowed != null && !allowed) {
+        if (SpawnInterception.isHandledBeforeMobFinalizeSpawn(mob)) {
+            return;
+        }
+        if (!MobSpawnManager.isSpawnAllowed(mob, level, spawnType)) {
             mob.discard();
             callback.setReturnValue(spawnGroupData);
             return;
