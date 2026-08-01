@@ -56,7 +56,7 @@ public final class MobSpawnManager {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String ATTRIBUTES_KEY = "attributes";
-    private static final String NATURAL_SPAWN_KEY = "natural_spawn";
+    private static final String SPAWN_RESTRICTIONS_KEY = "spawn_restrictions";
     private static final Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> RULES = new HashMap<>();
     private static final Map<ResourceLocation, Map<ResourceLocation, Double>> ATTRIBUTE_OVERRIDES = new HashMap<>();
     private static final Map<ResourceLocation, NaturalSpawnSettings> NATURAL_SPAWN_SETTINGS = new HashMap<>();
@@ -197,7 +197,7 @@ public final class MobSpawnManager {
                 mobObj = new JsonObject();
                 root.add(mobId.toString(), mobObj);
             }
-            mobObj.add(NATURAL_SPAWN_KEY, NaturalSpawnSettingsJsonCodec.encode(settings));
+            mobObj.add(SPAWN_RESTRICTIONS_KEY, NaturalSpawnSettingsJsonCodec.encode(settings));
         });
 
         try {
@@ -222,13 +222,13 @@ public final class MobSpawnManager {
     }
 
     public static void load() {
+        RULES.clear();
+        ATTRIBUTE_OVERRIDES.clear();
+        NATURAL_SPAWN_SETTINGS.clear();
         if (savePath == null || !Files.exists(savePath)) {
             return;
         }
 
-        RULES.clear();
-        ATTRIBUTE_OVERRIDES.clear();
-        NATURAL_SPAWN_SETTINGS.clear();
         try (Reader reader = new BufferedReader(new InputStreamReader(
                 Files.newInputStream(savePath), StandardCharsets.UTF_8))) {
             JsonObject root = GSON.fromJson(reader, JsonObject.class);
@@ -248,7 +248,8 @@ public final class MobSpawnManager {
                         loadAttributeOverrides(mobId, typeEntry.getValue().getAsJsonObject());
                         continue;
                     }
-                    if (typeEntry.getKey().equals(NATURAL_SPAWN_KEY) && typeEntry.getValue().isJsonObject()) {
+                    if (typeEntry.getKey().equals(SPAWN_RESTRICTIONS_KEY)
+                            && typeEntry.getValue().isJsonObject()) {
                         NaturalSpawnSettings settings = NaturalSpawnSettingsJsonCodec.decode(
                                 typeEntry.getValue().getAsJsonObject());
                         if (!settings.isDefault()) {
@@ -294,21 +295,18 @@ public final class MobSpawnManager {
         return null;
     }
 
-    /** Applies the spawn-type switch first, then the NATURAL-only condition set. */
+    /** Applies the spawn-type switch first, then the detailed conditions when their type filter matches. */
     public static boolean isSpawnAllowed(Entity entity, ServerLevelAccessor level, MobSpawnType spawnType) {
         ResourceLocation mobId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         Boolean allowed = getAllowed(mobId, spawnType);
         return (allowed == null || allowed) && isNaturalSpawnAllowed(entity, level, spawnType);
     }
 
-    /** Returns false when a NATURAL spawn fails one of the configured GUI conditions. */
+    /** Returns false when an applicable spawn fails one of the configured GUI conditions. */
     public static boolean isNaturalSpawnAllowed(Entity entity, ServerLevelAccessor level, MobSpawnType spawnType) {
-        if (spawnType != MobSpawnType.NATURAL) {
-            return true;
-        }
         ResourceLocation mobId = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         NaturalSpawnSettings settings = NATURAL_SPAWN_SETTINGS.get(mobId);
-        if (settings == null) {
+        if (settings == null || !settings.appliesTo(spawnType)) {
             return true;
         }
 

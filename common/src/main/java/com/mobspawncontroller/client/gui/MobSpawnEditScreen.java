@@ -92,6 +92,7 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
     }
 
     private static final List<NaturalField> NATURAL_FIELDS = List.of(
+            new NaturalField("spawn_type_list", NaturalFieldType.PICKER),
             new NaturalField("chance", NaturalFieldType.NUMBER),
             new NaturalField("players_range", NaturalFieldType.RANGE),
             new NaturalField("max_nearby", NaturalFieldType.NUMBER),
@@ -300,6 +301,8 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
         naturalInputs.clear();
         naturalSelectorModes.clear();
         naturalSelections.clear();
+        loadSelector("spawn_type_list", spawnTypeStrings(settings.spawnTypes()),
+                spawnTypeStrings(settings.excludedSpawnTypes()));
         naturalInputs.put("chance", formatNaturalNumber(settings.chance() * 100.0));
         putNatural("min_height", settings.minHeight());
         putNatural("max_height", settings.maxHeight());
@@ -389,7 +392,9 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
                 selectedStrings("block_at_list", SelectorMode.WHITELIST),
                 selectedStrings("block_at_list", SelectorMode.BLACKLIST),
                 selectedStrings("block_above_list", SelectorMode.WHITELIST),
-                selectedStrings("block_above_list", SelectorMode.BLACKLIST));
+                selectedStrings("block_above_list", SelectorMode.BLACKLIST),
+                selectedSpawnTypes("spawn_type_list", SelectorMode.WHITELIST),
+                selectedSpawnTypes("spawn_type_list", SelectorMode.BLACKLIST));
     }
 
     private Integer parseNaturalInteger(String key) {
@@ -508,6 +513,22 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
                 .filter(java.util.Objects::nonNull).distinct().toList();
     }
 
+    private List<MobSpawnType> selectedSpawnTypes(String key, SelectorMode mode) {
+        return naturalSelection(key, mode).stream()
+                .map(value -> {
+                    try {
+                        return MobSpawnType.valueOf(value.toUpperCase(Locale.ROOT));
+                    } catch (IllegalArgumentException ignored) {
+                        return null;
+                    }
+                })
+                .filter(java.util.Objects::nonNull).distinct().toList();
+    }
+
+    private static List<String> spawnTypeStrings(List<MobSpawnType> values) {
+        return values.stream().map(value -> value.name().toLowerCase(Locale.ROOT)).toList();
+    }
+
     private List<String> activeNaturalSelection(String key) {
         return naturalSelection(key, naturalSelectorModes.getOrDefault(key, SelectorMode.WHITELIST));
     }
@@ -617,7 +638,7 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
 
         if (entityType != null) {
             MobSpawnControllerScreen.renderEntityIcon(guiGraphics, entityType, iconLeft + iconSize / 2,
-                    iconTop + iconSize / 2 + 3, iconSize, parent.getEntityCache());
+                    iconTop + iconSize - 2, iconSize, parent.getEntityCache());
         }
     }
 
@@ -1243,7 +1264,13 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
     private List<NaturalRegistryPickerScreen.Option> naturalPickerOptions(String key) {
         Minecraft mc = Minecraft.getInstance();
         List<NaturalRegistryPickerScreen.Option> options = new ArrayList<>();
-        if (key.equals("moon_phase_list")) {
+        if (key.equals("spawn_type_list")) {
+            for (MobSpawnType spawnType : MobSpawnType.values()) {
+                String value = spawnType.name().toLowerCase(Locale.ROOT);
+                String label = Component.translatable("gui.mobspawncontroller.spawntype." + value).getString();
+                options.add(new NaturalRegistryPickerScreen.Option(value, label));
+            }
+        } else if (key.equals("moon_phase_list")) {
             for (int phase = 0; phase < 8; phase++) {
                 String value = String.valueOf(phase);
                 String label = Component.translatable("gui.mobspawncontroller.natural.moon_phase." + phase).getString();

@@ -8,11 +8,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MobSpawnManagerPersistenceTest {
 
@@ -25,7 +27,7 @@ class MobSpawnManagerPersistenceTest {
     }
 
     @Test
-    void naturalRulesPersistAlongsideSpawnSwitchesAndAttributes() {
+    void naturalRulesPersistAlongsideSpawnSwitchesAndAttributes() throws Exception {
         ResourceLocation mobId = id("minecraft", "zombie");
         ResourceLocation attributeId = id("minecraft", "generic.max_health");
         NaturalSpawnSettings settings = settings();
@@ -36,6 +38,9 @@ class MobSpawnManagerPersistenceTest {
         MobSpawnManager.setAttributeOverrides(mobId, Map.of(attributeId, 40.0));
         MobSpawnManager.setNaturalSpawnSettings(mobId, settings);
         MobSpawnManager.save();
+        String savedJson = Files.readString(rulesFile);
+        assertFalse(savedJson.contains("natural_spawn"));
+        assertTrue(savedJson.contains("spawn_restrictions"));
 
         MobSpawnManager.clearAll();
         assertFalse(MobSpawnManager.getAllRules().containsKey(mobId));
@@ -44,6 +49,17 @@ class MobSpawnManagerPersistenceTest {
         assertEquals(Boolean.FALSE, MobSpawnManager.getAllowed(mobId, MobSpawnType.NATURAL));
         assertEquals(Map.of(attributeId, 40.0), MobSpawnManager.getAttributeOverrides(mobId));
         assertEquals(settings, MobSpawnManager.getNaturalSpawnSettings(mobId));
+    }
+
+    @Test
+    void loadingMissingGlobalConfigClearsPreviousState() {
+        ResourceLocation mobId = id("minecraft", "zombie");
+        MobSpawnManager.setAllowed(mobId, MobSpawnType.NATURAL, false);
+        MobSpawnManager.setSavePath(tempDir.resolve("missing.json"));
+
+        MobSpawnManager.load();
+
+        assertFalse(MobSpawnManager.getAllRules().containsKey(mobId));
     }
 
     private static NaturalSpawnSettings settings() {
@@ -70,7 +86,8 @@ class MobSpawnManagerPersistenceTest {
                 null, null,
                 4, 24.0,
                 null, null, null, null,
-                List.of(), List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), List.of(),
+                List.of(MobSpawnType.NATURAL, MobSpawnType.COMMAND), List.of());
     }
 
     private static ResourceLocation id(String namespace, String path) {

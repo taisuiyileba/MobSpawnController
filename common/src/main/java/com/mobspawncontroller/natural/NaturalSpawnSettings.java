@@ -2,6 +2,7 @@ package com.mobspawncontroller.natural;
 
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.MobSpawnType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -57,7 +58,9 @@ public record NaturalSpawnSettings(
         List<String> blocksAt,
         List<String> excludedBlocksAt,
         List<String> blocksAbove,
-        List<String> excludedBlocksAbove
+        List<String> excludedBlocksAbove,
+        List<MobSpawnType> spawnTypes,
+        List<MobSpawnType> excludedSpawnTypes
 ) {
 
     public NaturalSpawnSettings {
@@ -105,6 +108,8 @@ public record NaturalSpawnSettings(
         excludedBlocksAt = immutableSelectors(excludedBlocksAt);
         blocksAbove = immutableSelectors(blocksAbove);
         excludedBlocksAbove = immutableSelectors(excludedBlocksAbove);
+        spawnTypes = immutableSpawnTypes(spawnTypes);
+        excludedSpawnTypes = immutableSpawnTypes(excludedSpawnTypes);
     }
 
     public static NaturalSpawnSettings defaults() {
@@ -118,11 +123,19 @@ public record NaturalSpawnSettings(
                 List.of(), List.of(), List.of(), List.of(),
                 null, null, null, 16.0,
                 null, null, null, null,
-                List.of(), List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), List.of(),
+                List.of(MobSpawnType.NATURAL), List.of());
     }
 
     public boolean isDefault() {
         return equals(defaults());
+    }
+
+    /** Returns whether this detailed condition set applies to the supplied spawn reason. */
+    public boolean appliesTo(MobSpawnType spawnType) {
+        return spawnType != null
+                && (spawnTypes.isEmpty() || spawnTypes.contains(spawnType))
+                && !excludedSpawnTypes.contains(spawnType);
     }
 
     public void write(FriendlyByteBuf buf) {
@@ -172,6 +185,8 @@ public record NaturalSpawnSettings(
         writeSelectors(buf, excludedBlocksAt);
         writeSelectors(buf, blocksAbove);
         writeSelectors(buf, excludedBlocksAbove);
+        writeSpawnTypes(buf, spawnTypes);
+        writeSpawnTypes(buf, excludedSpawnTypes);
     }
 
     public static NaturalSpawnSettings read(FriendlyByteBuf buf) {
@@ -193,7 +208,8 @@ public record NaturalSpawnSettings(
                 readSelectors(buf), readSelectors(buf), readSelectors(buf), readSelectors(buf),
                 readNullableInt(buf), readNullableInt(buf), readNullableInt(buf), buf.readDouble(),
                 readNullableInt(buf), readNullableInt(buf), readNullableInt(buf), readNullableInt(buf),
-                readSelectors(buf), readSelectors(buf), readSelectors(buf), readSelectors(buf));
+                readSelectors(buf), readSelectors(buf), readSelectors(buf), readSelectors(buf),
+                readSpawnTypes(buf), readSpawnTypes(buf));
     }
 
     private static void writeResources(FriendlyByteBuf buf, List<ResourceLocation> values) {
@@ -210,6 +226,14 @@ public record NaturalSpawnSettings(
 
     private static List<String> readSelectors(FriendlyByteBuf buf) {
         return buf.readList(target -> target.readUtf(160));
+    }
+
+    private static void writeSpawnTypes(FriendlyByteBuf buf, List<MobSpawnType> values) {
+        buf.writeCollection(values, (target, value) -> target.writeEnum(value));
+    }
+
+    private static List<MobSpawnType> readSpawnTypes(FriendlyByteBuf buf) {
+        return buf.readList(target -> target.readEnum(MobSpawnType.class));
     }
 
     private static void writeNullableInt(FriendlyByteBuf buf, Integer value) {
@@ -269,6 +293,12 @@ public record NaturalSpawnSettings(
     private static List<Integer> immutableInts(List<Integer> values) {
         return values == null ? List.of()
                 : values.stream().filter(value -> value != null && value >= 0 && value <= 7).distinct().sorted().toList();
+    }
+
+    private static List<MobSpawnType> immutableSpawnTypes(List<MobSpawnType> values) {
+        return values == null ? List.of()
+                : values.stream().filter(java.util.Objects::nonNull).distinct()
+                .sorted(java.util.Comparator.comparingInt(Enum::ordinal)).toList();
     }
 
     private static void writeInts(FriendlyByteBuf buf, List<Integer> values) {

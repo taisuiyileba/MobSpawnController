@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.MobSpawnType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -65,6 +66,8 @@ public final class NaturalSpawnSettingsJsonCodec {
         addStringList(json, "excluded_blocks_at", settings.excludedBlocksAt());
         addStringList(json, "blocks_above", settings.blocksAbove());
         addStringList(json, "excluded_blocks_above", settings.excludedBlocksAbove());
+        addEnumList(json, "spawn_types", settings.spawnTypes(), true);
+        addEnumList(json, "excluded_spawn_types", settings.excludedSpawnTypes(), false);
         return json;
     }
 
@@ -99,7 +102,9 @@ public final class NaturalSpawnSettingsJsonCodec {
                 getInteger(json, "min_sky_light"), getInteger(json, "max_sky_light"),
                 getInteger(json, "min_block_light"), getInteger(json, "max_block_light"),
                 getStringList(json, "blocks_at"), getStringList(json, "excluded_blocks_at"),
-                getStringList(json, "blocks_above"), getStringList(json, "excluded_blocks_above"));
+                getStringList(json, "blocks_above"), getStringList(json, "excluded_blocks_above"),
+                getEnumList(json, "spawn_types", MobSpawnType.class, List.of(MobSpawnType.NATURAL)),
+                getEnumList(json, "excluded_spawn_types", MobSpawnType.class, List.of()));
     }
 
     private static void addNullable(JsonObject json, String key, Number value) {
@@ -125,6 +130,14 @@ public final class NaturalSpawnSettingsJsonCodec {
         if (values.isEmpty()) return;
         JsonArray array = new JsonArray();
         values.forEach(array::add);
+        json.add(key, array);
+    }
+
+    private static <T extends Enum<T>> void addEnumList(JsonObject json, String key, List<T> values,
+                                                         boolean includeEmpty) {
+        if (values.isEmpty() && !includeEmpty) return;
+        JsonArray array = new JsonArray();
+        values.forEach(value -> array.add(value.name().toLowerCase(Locale.ROOT)));
         json.add(key, array);
     }
 
@@ -175,6 +188,21 @@ public final class NaturalSpawnSettingsJsonCodec {
         List<Integer> values = new ArrayList<>();
         for (JsonElement element : json.getAsJsonArray(key)) {
             if (element.isJsonPrimitive()) values.add(element.getAsInt());
+        }
+        return values;
+    }
+
+    private static <T extends Enum<T>> List<T> getEnumList(JsonObject json, String key, Class<T> type,
+                                                            List<T> fallback) {
+        if (!json.has(key) || !json.get(key).isJsonArray()) return fallback;
+        List<T> values = new ArrayList<>();
+        for (JsonElement element : json.getAsJsonArray(key)) {
+            if (!element.isJsonPrimitive()) continue;
+            try {
+                values.add(Enum.valueOf(type, element.getAsString().toUpperCase(Locale.ROOT)));
+            } catch (IllegalArgumentException ignored) {
+                // Ignore unknown values so configurations remain forward-compatible.
+            }
         }
         return values;
     }

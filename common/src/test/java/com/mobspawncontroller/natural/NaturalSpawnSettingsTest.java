@@ -1,14 +1,17 @@
 package com.mobspawncontroller.natural;
 
 import com.google.gson.JsonObject;
+import com.google.gson.JsonArray;
 import io.netty.buffer.Unpooled;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.MobSpawnType;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NaturalSpawnSettingsTest {
@@ -19,7 +22,8 @@ class NaturalSpawnSettingsTest {
 
         JsonObject encoded = NaturalSpawnSettingsJsonCodec.encode(defaults);
 
-        assertTrue(encoded.entrySet().isEmpty());
+        assertEquals(1, encoded.size());
+        assertTrue(encoded.has("spawn_types"));
         assertEquals(defaults, NaturalSpawnSettingsJsonCodec.decode(encoded));
     }
 
@@ -41,6 +45,19 @@ class NaturalSpawnSettingsTest {
     }
 
     @Test
+    void spawnTypeFilterKeepsLegacyNaturalDefaultAndSupportsAllTypes() {
+        NaturalSpawnSettings legacy = NaturalSpawnSettingsJsonCodec.decode(new JsonObject());
+        assertTrue(legacy.appliesTo(MobSpawnType.NATURAL));
+        assertFalse(legacy.appliesTo(MobSpawnType.COMMAND));
+
+        JsonObject unrestrictedJson = new JsonObject();
+        unrestrictedJson.add("spawn_types", new JsonArray());
+        NaturalSpawnSettings unrestricted = NaturalSpawnSettingsJsonCodec.decode(unrestrictedJson);
+        assertTrue(unrestricted.appliesTo(MobSpawnType.NATURAL));
+        assertTrue(unrestricted.appliesTo(MobSpawnType.COMMAND));
+    }
+
+    @Test
     void constructorNormalizesLegacySeasonsAndUnsafeBounds() {
         NaturalSpawnSettings defaults = NaturalSpawnSettings.defaults();
         NaturalSpawnSettings normalized = new NaturalSpawnSettings(
@@ -57,7 +74,8 @@ class NaturalSpawnSettingsTest {
                 null, null, null, null,
                 -1, -2, -3, -10.0,
                 -1, 99, -2, 88,
-                null, null, null, null);
+                null, null, null, null,
+                null, null);
 
         assertEquals(1.0, normalized.chance());
         assertEquals(0, normalized.minTotalLight());
@@ -73,6 +91,7 @@ class NaturalSpawnSettingsTest {
         assertEquals(1.0, normalized.nearbyRadius());
         assertEquals(0, normalized.minSkyLight());
         assertEquals(15, normalized.maxSkyLight());
+        assertTrue(normalized.spawnTypes().isEmpty());
     }
 
     private static NaturalSpawnSettings comprehensiveSettings() {
@@ -110,7 +129,9 @@ class NaturalSpawnSettingsTest {
                 List.of("minecraft:air"),
                 List.of("minecraft:water"),
                 List.of("minecraft:stone"),
-                List.of("#minecraft:leaves"));
+                List.of("#minecraft:leaves"),
+                List.of(MobSpawnType.NATURAL, MobSpawnType.COMMAND),
+                List.of(MobSpawnType.SPAWNER));
     }
 
     private static ResourceLocation id(String namespace, String path) {

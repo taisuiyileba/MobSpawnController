@@ -26,6 +26,7 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLEnvironment;
+import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.living.FinalizeSpawnEvent;
@@ -41,6 +42,7 @@ public final class MobSpawnControllerNeoForge {
     public MobSpawnControllerNeoForge(IEventBus modBus) {
         ModCompat.setModLoadedChecker(modId -> ModList.get().isLoaded(modId));
         SpawnInterception.setPlatformHandlesFinalizeSpawn(true);
+        MobSpawnController.setConfigDirectory(FMLPaths.CONFIGDIR.get());
         MobSpawnController.init();
         NetworkBridge.setSender(new NeoForgePacketSender());
 
@@ -58,7 +60,7 @@ public final class MobSpawnControllerNeoForge {
     }
 
     private void registerPayloads(RegisterPayloadHandlersEvent event) {
-        var registrar = event.registrar(MobSpawnController.MOD_ID).versioned("6").optional();
+        var registrar = event.registrar(MobSpawnController.MOD_ID).versioned("7").optional();
         registrar.playToServer(ServerboundToggleSpawnPayload.TYPE, ServerboundToggleSpawnPayload.STREAM_CODEC,
                 (payload, context) -> ServerboundToggleSpawnPayload.handle(payload, (ServerPlayer) context.player()));
         registrar.playToServer(ServerboundRequestRulesPayload.TYPE, ServerboundRequestRulesPayload.STREAM_CODEC,
@@ -80,7 +82,7 @@ public final class MobSpawnControllerNeoForge {
     }
 
     private void onServerStarting(ServerStartingEvent event) {
-        MobSpawnController.serverStarting(event.getServer());
+        MobSpawnController.serverStarting();
     }
 
     private void onServerStopping(ServerStoppingEvent event) {
