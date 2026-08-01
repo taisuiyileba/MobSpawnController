@@ -31,6 +31,7 @@ import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.fml.loading.FMLPaths;
 import net.minecraftforge.network.NetworkDirection;
 import net.minecraftforge.network.NetworkEvent;
 import net.minecraftforge.network.NetworkRegistry;
@@ -42,7 +43,7 @@ import java.util.function.Supplier;
 @Mod(MobSpawnController.MOD_ID)
 public final class MobSpawnControllerForge {
 
-    private static final String PROTOCOL_VERSION = "6";
+    private static final String PROTOCOL_VERSION = "7";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             MobSpawnController.id("main"),
             () -> PROTOCOL_VERSION,
@@ -53,6 +54,7 @@ public final class MobSpawnControllerForge {
     public MobSpawnControllerForge(FMLJavaModLoadingContext loadingContext) {
         ModCompat.setModLoadedChecker(modId -> ModList.get().isLoaded(modId));
         SpawnInterception.setPlatformHandlesFinalizeSpawn(true);
+        MobSpawnController.setConfigDirectory(FMLPaths.CONFIGDIR.get());
         MobSpawnController.init();
         NetworkBridge.setToPlayerSender(MobSpawnControllerForge::sendToPlayer);
 
@@ -149,7 +151,7 @@ public final class MobSpawnControllerForge {
     }
 
     private void onServerStarting(ServerStartingEvent event) {
-        MobSpawnController.serverStarting(event.getServer());
+        MobSpawnController.serverStarting();
     }
 
     private void onServerStopping(ServerStoppingEvent event) {

@@ -27,6 +27,7 @@ public final class MobSpawnControllerFabric implements ModInitializer {
     @Override
     public void onInitialize() {
         ModCompat.setModLoadedChecker(FabricLoader.getInstance()::isModLoaded);
+        MobSpawnController.setConfigDirectory(FabricLoader.getInstance().getConfigDir());
         MobSpawnController.init();
         registerPayloads();
 
@@ -34,7 +35,7 @@ public final class MobSpawnControllerFabric implements ModInitializer {
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 MobSpawnCommand.register(dispatcher));
-        ServerLifecycleEvents.SERVER_STARTING.register(MobSpawnController::serverStarting);
+        ServerLifecycleEvents.SERVER_STARTING.register(server -> MobSpawnController.serverStarting());
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> MobSpawnController.serverStopping());
     }
 

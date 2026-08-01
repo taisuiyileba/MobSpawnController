@@ -18,7 +18,6 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.MobSpawnType;
-import org.joml.Quaternionf;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -36,6 +35,7 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
 
     private static final int ROW_HEIGHT = 24;
     private static final int PADDING = 4;
+    private static final float ENTITY_ICON_FILL = 0.9f;
     private static final int EDIT_BTN_W = 20;
     private static final int EDIT_BTN_H = 16;
     private static final int PANEL_INSET = 8;
@@ -344,7 +344,7 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
             int iconSize = 20;
             if (entityType != null) {
                 renderEntityIcon(guiGraphics, entityType, listLeft + PADDING + iconSize / 2,
-                        rowY + ROW_HEIGHT / 2 + 2, iconSize, entityCache);
+                        rowY + ROW_HEIGHT - 2, iconSize, entityCache);
             }
 
             String displayName;
@@ -460,15 +460,16 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
             }
 
             float entitySize = Math.max(entity.getBbWidth(), entity.getBbHeight());
-            float scale = entitySize > 0 ? (size * 0.4f) / entitySize : size * 0.4f;
-            scale = Math.min(scale, size * 0.5f);
+            float scale = entitySize > 0
+                    ? (size * ENTITY_ICON_FILL) / entitySize
+                    : size * ENTITY_ICON_FILL;
 
             guiGraphics.pose().pushPose();
             posePushed = true;
             guiGraphics.pose().translate(x, y, 50);
             guiGraphics.pose().scale(scale, -scale, scale);
-            guiGraphics.pose().mulPose(new Quaternionf().rotationYXZ((float) Math.toRadians(210),
-                    (float) Math.toRadians(-15), 0));
+            // Keep the entity at its default yaw for a straight-on front view. In particular,
+            // do not add pitch here, as that makes every model appear diagonally tilted.
 
             dispatcher = mc.getEntityRenderDispatcher();
             dispatcher.setRenderShadow(false);
