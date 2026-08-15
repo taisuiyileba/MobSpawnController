@@ -1,6 +1,7 @@
 package com.mobspawncontroller.network;
 
 import com.mobspawncontroller.MobSpawnController;
+import com.mobspawncontroller.active.ActiveSpawnSettings;
 import com.mobspawncontroller.natural.NaturalSpawnSettings;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
@@ -14,7 +15,8 @@ import java.util.Set;
 
 public record ClientboundSyncRulesPayload(Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> rules,
                                           Set<ResourceLocation> attributeModifiedMobs,
-                                          Map<ResourceLocation, NaturalSpawnSettings> naturalSpawnSettings) {
+                                          Map<ResourceLocation, NaturalSpawnSettings> naturalSpawnSettings,
+                                          Map<ResourceLocation, ActiveSpawnSettings> activeSpawnSettings) {
 
     public static final ResourceLocation ID = MobSpawnController.id("sync_rules");
 
@@ -45,7 +47,13 @@ public record ClientboundSyncRulesPayload(Map<ResourceLocation, EnumMap<MobSpawn
         for (int i = 0; i < naturalSize; i++) {
             naturalSpawnSettings.put(buf.readResourceLocation(), NaturalSpawnSettings.read(buf));
         }
-        return new ClientboundSyncRulesPayload(rules, attributeModifiedMobs, naturalSpawnSettings);
+        int activeSize = buf.readVarInt();
+        Map<ResourceLocation, ActiveSpawnSettings> activeSpawnSettings = new HashMap<>();
+        for (int i = 0; i < activeSize; i++) {
+            activeSpawnSettings.put(buf.readResourceLocation(), ActiveSpawnSettings.read(buf));
+        }
+        return new ClientboundSyncRulesPayload(rules, attributeModifiedMobs, naturalSpawnSettings,
+                activeSpawnSettings);
     }
 
     public static void write(ClientboundSyncRulesPayload payload, FriendlyByteBuf buf) {
@@ -62,6 +70,11 @@ public record ClientboundSyncRulesPayload(Map<ResourceLocation, EnumMap<MobSpawn
         payload.attributeModifiedMobs.forEach(buf::writeResourceLocation);
         buf.writeVarInt(payload.naturalSpawnSettings.size());
         payload.naturalSpawnSettings.forEach((mobId, settings) -> {
+            buf.writeResourceLocation(mobId);
+            settings.write(buf);
+        });
+        buf.writeVarInt(payload.activeSpawnSettings.size());
+        payload.activeSpawnSettings.forEach((mobId, settings) -> {
             buf.writeResourceLocation(mobId);
             settings.write(buf);
         });

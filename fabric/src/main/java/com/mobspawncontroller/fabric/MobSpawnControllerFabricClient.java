@@ -9,6 +9,7 @@ import com.mobspawncontroller.network.ServerboundRequestAttributesPayload;
 import com.mobspawncontroller.network.ServerboundRequestRulesPayload;
 import com.mobspawncontroller.network.ServerboundRequestStructuresPayload;
 import com.mobspawncontroller.network.ServerboundSetAttributesPayload;
+import com.mobspawncontroller.network.ServerboundSetActiveSpawnPayload;
 import com.mobspawncontroller.network.ServerboundSetNaturalSpawnPayload;
 import com.mobspawncontroller.network.ServerboundToggleSpawnPayload;
 import com.mobspawncontroller.platform.NetworkBridge;
@@ -80,6 +81,9 @@ public final class MobSpawnControllerFabricClient implements ClientModInitialize
         } else if (payload instanceof ServerboundSetNaturalSpawnPayload naturalSpawn) {
             ServerboundSetNaturalSpawnPayload.write(naturalSpawn, buf);
             ClientPlayNetworking.send(ServerboundSetNaturalSpawnPayload.ID, buf);
+        } else if (payload instanceof ServerboundSetActiveSpawnPayload activeSpawn) {
+            ServerboundSetActiveSpawnPayload.write(activeSpawn, buf);
+            ClientPlayNetworking.send(ServerboundSetActiveSpawnPayload.ID, buf);
         } else if (payload instanceof ServerboundRequestStructuresPayload requestStructures) {
             ServerboundRequestStructuresPayload.write(requestStructures, buf);
             ClientPlayNetworking.send(ServerboundRequestStructuresPayload.ID, buf);

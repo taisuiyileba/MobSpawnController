@@ -1,6 +1,7 @@
 package com.mobspawncontroller.fabric;
 
 import com.mobspawncontroller.MobSpawnController;
+import com.mobspawncontroller.active.ActiveSpawner;
 import com.mobspawncontroller.command.MobSpawnCommand;
 import com.mobspawncontroller.network.ClientboundSyncAttributesPayload;
 import com.mobspawncontroller.network.ClientboundSyncRulesPayload;
@@ -9,6 +10,7 @@ import com.mobspawncontroller.network.ServerboundRequestAttributesPayload;
 import com.mobspawncontroller.network.ServerboundRequestRulesPayload;
 import com.mobspawncontroller.network.ServerboundRequestStructuresPayload;
 import com.mobspawncontroller.network.ServerboundSetAttributesPayload;
+import com.mobspawncontroller.network.ServerboundSetActiveSpawnPayload;
 import com.mobspawncontroller.network.ServerboundSetNaturalSpawnPayload;
 import com.mobspawncontroller.network.ServerboundToggleSpawnPayload;
 import com.mobspawncontroller.platform.NetworkBridge;
@@ -18,6 +20,7 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
@@ -37,6 +40,7 @@ public final class MobSpawnControllerFabric implements ModInitializer {
                 MobSpawnCommand.register(dispatcher));
         ServerLifecycleEvents.SERVER_STARTING.register(server -> MobSpawnController.serverStarting());
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> MobSpawnController.serverStopping());
+        ServerTickEvents.END_WORLD_TICK.register(ActiveSpawner::tick);
     }
 
     private static void registerPayloads() {
@@ -64,6 +68,11 @@ public final class MobSpawnControllerFabric implements ModInitializer {
                 (server, player, handler, buf, responseSender) -> {
                     ServerboundSetNaturalSpawnPayload payload = ServerboundSetNaturalSpawnPayload.read(buf);
                     server.execute(() -> ServerboundSetNaturalSpawnPayload.handle(payload, player));
+                });
+        ServerPlayNetworking.registerGlobalReceiver(ServerboundSetActiveSpawnPayload.ID,
+                (server, player, handler, buf, responseSender) -> {
+                    ServerboundSetActiveSpawnPayload payload = ServerboundSetActiveSpawnPayload.read(buf);
+                    server.execute(() -> ServerboundSetActiveSpawnPayload.handle(payload, player));
                 });
         ServerPlayNetworking.registerGlobalReceiver(ServerboundRequestStructuresPayload.ID,
                 (server, player, handler, buf, responseSender) -> {

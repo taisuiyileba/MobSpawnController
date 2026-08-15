@@ -1,6 +1,7 @@
 package com.mobspawncontroller.forge;
 
 import com.mobspawncontroller.MobSpawnController;
+import com.mobspawncontroller.active.ActiveSpawner;
 import com.mobspawncontroller.client.ClientRuleSync;
 import com.mobspawncontroller.command.MobSpawnCommand;
 import com.mobspawncontroller.command.MobSpawnManager;
@@ -11,6 +12,7 @@ import com.mobspawncontroller.network.ServerboundRequestAttributesPayload;
 import com.mobspawncontroller.network.ServerboundRequestRulesPayload;
 import com.mobspawncontroller.network.ServerboundRequestStructuresPayload;
 import com.mobspawncontroller.network.ServerboundSetAttributesPayload;
+import com.mobspawncontroller.network.ServerboundSetActiveSpawnPayload;
 import com.mobspawncontroller.network.ServerboundSetNaturalSpawnPayload;
 import com.mobspawncontroller.network.ServerboundToggleSpawnPayload;
 import com.mobspawncontroller.natural.SpawnInterception;
@@ -19,9 +21,11 @@ import com.mobspawncontroller.platform.ModCompat;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.MobSpawnEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
@@ -43,7 +47,7 @@ import java.util.function.Supplier;
 @Mod(MobSpawnController.MOD_ID)
 public final class MobSpawnControllerForge {
 
-    private static final String PROTOCOL_VERSION = "7";
+    private static final String PROTOCOL_VERSION = "9";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             MobSpawnController.id("main"),
             () -> PROTOCOL_VERSION,
@@ -65,6 +69,7 @@ public final class MobSpawnControllerForge {
         MinecraftForge.EVENT_BUS.addListener(this::onRegisterCommands);
         MinecraftForge.EVENT_BUS.addListener(this::onSpawnPlacementCheck);
         MinecraftForge.EVENT_BUS.addListener(this::onFinalizeSpawn);
+        MinecraftForge.EVENT_BUS.addListener(this::onLevelTick);
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
@@ -102,6 +107,12 @@ public final class MobSpawnControllerForge {
                 .decoder(ServerboundSetNaturalSpawnPayload::read)
                 .consumerMainThread((payload, context) -> handleServer(payload, context,
                         ServerboundSetNaturalSpawnPayload::handle))
+                .add();
+        CHANNEL.messageBuilder(ServerboundSetActiveSpawnPayload.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(ServerboundSetActiveSpawnPayload::write)
+                .decoder(ServerboundSetActiveSpawnPayload::read)
+                .consumerMainThread((payload, context) -> handleServer(payload, context,
+                        ServerboundSetActiveSpawnPayload::handle))
                 .add();
         CHANNEL.messageBuilder(ServerboundRequestStructuresPayload.class, id++, NetworkDirection.PLAY_TO_SERVER)
                 .encoder(ServerboundRequestStructuresPayload::write)
@@ -172,11 +183,20 @@ public final class MobSpawnControllerForge {
     }
 
     private void onFinalizeSpawn(MobSpawnEvent.FinalizeSpawn event) {
+        if (SpawnInterception.isPrechecked(event.getEntity())) {
+            return;
+        }
         if (!MobSpawnManager.isSpawnAllowed(event.getEntity(), event.getLevel(), event.getSpawnType())) {
             event.setSpawnCancelled(true);
             return;
         }
         MobSpawnManager.applyAttributeOverrides(event.getEntity());
+    }
+
+    private void onLevelTick(TickEvent.LevelTickEvent event) {
+        if (event.phase == TickEvent.Phase.END && event.level instanceof ServerLevel level) {
+            ActiveSpawner.tick(level);
+        }
     }
 
     private interface ServerPayloadHandler<T> {

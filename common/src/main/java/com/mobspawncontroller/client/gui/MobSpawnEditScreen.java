@@ -1,12 +1,14 @@
 package com.mobspawncontroller.client.gui;
 
 import com.mobspawncontroller.MobSpawnController;
+import com.mobspawncontroller.active.ActiveSpawnSettings;
 import com.mobspawncontroller.attribute.MobAttributeControl;
 import com.mobspawncontroller.client.ClientRuleSync;
 import com.mobspawncontroller.compat.SereneSeasonsCompat;
 import com.mobspawncontroller.network.ServerboundRequestAttributesPayload;
 import com.mobspawncontroller.network.ServerboundRequestStructuresPayload;
 import com.mobspawncontroller.network.ServerboundSetAttributesPayload;
+import com.mobspawncontroller.network.ServerboundSetActiveSpawnPayload;
 import com.mobspawncontroller.network.ServerboundSetNaturalSpawnPayload;
 import com.mobspawncontroller.network.ServerboundToggleSpawnPayload;
 import com.mobspawncontroller.natural.NaturalSpawnSettings;
@@ -57,6 +59,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
     private enum DetailTab {
         SPAWN_RULES,
         NATURAL_SPAWN,
+        ACTIVE_SPAWN,
         ATTRIBUTES
     }
 
@@ -64,7 +67,8 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         NUMBER,
         RANGE,
         CYCLE,
-        PICKER
+        PICKER,
+        SWITCH
     }
 
     private record NaturalField(String key, NaturalFieldType type) {
@@ -145,6 +149,68 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             Map.entry("min_local_difficulty", decimalRule(0.0, Double.MAX_VALUE)),
             Map.entry("max_local_difficulty", decimalRule(0.0, Double.MAX_VALUE))
     );
+    private static final List<NaturalField> ACTIVE_FIELDS = List.of(
+            new NaturalField("enabled", NaturalFieldType.SWITCH),
+            new NaturalField("chance", NaturalFieldType.NUMBER),
+            new NaturalField("attempts", NaturalFieldType.NUMBER),
+            new NaturalField("amount_range", NaturalFieldType.RANGE),
+            new NaturalField("players_range", NaturalFieldType.RANGE),
+            new NaturalField("max_world_count", NaturalFieldType.NUMBER),
+            new NaturalField("max_nearby_count", NaturalFieldType.NUMBER),
+            new NaturalField("nearby_radius", NaturalFieldType.NUMBER),
+            new NaturalField("distance_range", NaturalFieldType.RANGE),
+            new NaturalField("spawn_distance_range", NaturalFieldType.RANGE),
+            new NaturalField("height_range", NaturalFieldType.RANGE),
+            new NaturalField("placement", NaturalFieldType.CYCLE),
+            new NaturalField("obey_spawn_rules", NaturalFieldType.SWITCH),
+            new NaturalField("sky", NaturalFieldType.CYCLE),
+            new NaturalField("slime_chunk", NaturalFieldType.CYCLE),
+            new NaturalField("total_light_range", NaturalFieldType.RANGE),
+            new NaturalField("sky_light_range", NaturalFieldType.RANGE),
+            new NaturalField("block_light_range", NaturalFieldType.RANGE),
+            new NaturalField("time_range", NaturalFieldType.RANGE),
+            new NaturalField("day_range", NaturalFieldType.RANGE),
+            new NaturalField("moon_phase_list", NaturalFieldType.PICKER),
+            new NaturalField("season_list", NaturalFieldType.PICKER),
+            new NaturalField("weather", NaturalFieldType.CYCLE),
+            new NaturalField("difficulty", NaturalFieldType.CYCLE),
+            new NaturalField("local_difficulty_range", NaturalFieldType.RANGE),
+            new NaturalField("dimension_list", NaturalFieldType.PICKER),
+            new NaturalField("biome_list", NaturalFieldType.PICKER),
+            new NaturalField("structure_list", NaturalFieldType.PICKER),
+            new NaturalField("block_below_list", NaturalFieldType.PICKER),
+            new NaturalField("block_at_list", NaturalFieldType.PICKER),
+            new NaturalField("block_above_list", NaturalFieldType.PICKER)
+    );
+    private static final Map<String, NaturalNumberRule> ACTIVE_NUMBER_RULES = Map.ofEntries(
+            Map.entry("chance", decimalRule(0.0, 100.0)),
+            Map.entry("attempts", integerRule(1, 128)),
+            Map.entry("min_amount", integerRule(1, 64)),
+            Map.entry("max_amount", integerRule(1, 64)),
+            Map.entry("min_distance", integerRule(0, 256)),
+            Map.entry("max_distance", integerRule(1, 256)),
+            Map.entry("min_players", integerRule(0, Integer.MAX_VALUE)),
+            Map.entry("max_players", integerRule(0, Integer.MAX_VALUE)),
+            Map.entry("min_spawn_distance", decimalRule(0.0, Double.MAX_VALUE)),
+            Map.entry("max_spawn_distance", decimalRule(0.0, Double.MAX_VALUE)),
+            Map.entry("min_height", integerRule(Integer.MIN_VALUE, Integer.MAX_VALUE)),
+            Map.entry("max_height", integerRule(Integer.MIN_VALUE, Integer.MAX_VALUE)),
+            Map.entry("min_day", integerRule(0, Integer.MAX_VALUE)),
+            Map.entry("max_day", integerRule(0, Integer.MAX_VALUE)),
+            Map.entry("min_time", integerRule(0, 23999)),
+            Map.entry("max_time", integerRule(0, 23999)),
+            Map.entry("min_total_light", integerRule(0, 15)),
+            Map.entry("max_total_light", integerRule(0, 15)),
+            Map.entry("min_sky_light", integerRule(0, 15)),
+            Map.entry("max_sky_light", integerRule(0, 15)),
+            Map.entry("min_block_light", integerRule(0, 15)),
+            Map.entry("max_block_light", integerRule(0, 15)),
+            Map.entry("min_local_difficulty", decimalRule(0.0, Double.MAX_VALUE)),
+            Map.entry("max_local_difficulty", decimalRule(0.0, Double.MAX_VALUE)),
+            Map.entry("max_world_count", integerRule(1, Integer.MAX_VALUE)),
+            Map.entry("max_nearby_count", integerRule(1, Integer.MAX_VALUE)),
+            Map.entry("nearby_radius", decimalRule(1.0, 256.0))
+    );
 
     private final MobSpawnControllerScreen parent;
     private final ResourceLocation mobId;
@@ -153,6 +219,9 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
     private final MobSpawnType[] spawnTypes = MobSpawnType.values();
     private final List<MobAttributeControl> attributeControls = new ArrayList<>();
     private final List<NaturalField> naturalFields = NATURAL_FIELDS.stream()
+            .filter(field -> !field.key().equals("season_list") || SereneSeasonsCompat.isAvailable())
+            .toList();
+    private final List<NaturalField> activeFields = ACTIVE_FIELDS.stream()
             .filter(field -> !field.key().equals("season_list") || SereneSeasonsCompat.isAvailable())
             .toList();
 
@@ -169,6 +238,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
     private double dragStartOffset = 0;
     private ResourceLocation focusedAttributeId = null;
     private String focusedNaturalField = null;
+    private String focusedActiveField = null;
     private Button cancelButton;
     private Button saveButton;
     private DetailTab activeTab = DetailTab.SPAWN_RULES;
@@ -177,6 +247,16 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
     private final Map<String, String> naturalInputs = new HashMap<>();
     private final Map<String, SelectorMode> naturalSelectorModes = new HashMap<>();
     private final Map<String, EnumMap<SelectorMode, List<String>>> naturalSelections = new HashMap<>();
+    private final Map<String, String> activeInputs = new HashMap<>();
+    private final Map<String, SelectorMode> activeSelectorModes = new HashMap<>();
+    private final Map<String, EnumMap<SelectorMode, List<String>>> activeSelections = new HashMap<>();
+    private boolean activeEnabled = false;
+    private boolean activeObeySpawnRules = true;
+    private ActiveSpawnSettings.PlacementMode activePlacement = ActiveSpawnSettings.PlacementMode.GROUND;
+    private ActiveSpawnSettings.SkyMode activeSky = ActiveSpawnSettings.SkyMode.ANY;
+    private NaturalSpawnSettings.WeatherMode activeWeather = NaturalSpawnSettings.WeatherMode.ANY;
+    private NaturalSpawnSettings.DifficultyMode activeDifficulty = NaturalSpawnSettings.DifficultyMode.ANY;
+    private NaturalSpawnSettings.SlimeChunkMode activeSlimeChunk = NaturalSpawnSettings.SlimeChunkMode.ANY;
     private NaturalSpawnSettings.WeatherMode naturalWeather = NaturalSpawnSettings.WeatherMode.ANY;
     private NaturalSpawnSettings.DifficultyMode naturalDifficulty = NaturalSpawnSettings.DifficultyMode.ANY;
     private NaturalSpawnSettings.SkyMode naturalSky = NaturalSpawnSettings.SkyMode.ANY;
@@ -197,6 +277,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             editRules.putAll(existing);
         }
         loadNaturalSettings(parent.getNaturalSpawnSettings().getOrDefault(mobId, NaturalSpawnSettings.defaults()));
+        loadActiveSettings(parent.getActiveSpawnSettings().getOrDefault(mobId, ActiveSpawnSettings.defaults()));
         NetworkBridge.sendToServer(new ServerboundRequestAttributesPayload(mobId));
         NetworkBridge.sendToServer(new ServerboundRequestStructuresPayload());
     }
@@ -205,7 +286,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
     protected void init() {
         int panelWidth = Math.max(280, Math.min(this.width - 32, 430));
         int desiredHeight = HEADER_HEIGHT + Math.max(spawnTypes.length * ROW_HEIGHT,
-                naturalFields.size() * NATURAL_ROW_HEIGHT) + FOOTER_HEIGHT;
+                Math.max(naturalFields.size(), activeFields.size()) * NATURAL_ROW_HEIGHT) + FOOTER_HEIGHT;
         int panelHeight = Math.max(170, Math.min(this.height - 32, desiredHeight));
         panelLeft = (this.width - panelWidth) / 2;
         panelRight = panelLeft + panelWidth;
@@ -243,6 +324,10 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             contentHeight = naturalFields.size() * NATURAL_ROW_HEIGHT;
             return;
         }
+        if (activeTab == DetailTab.ACTIVE_SPAWN) {
+            contentHeight = activeFields.size() * NATURAL_ROW_HEIGHT;
+            return;
+        }
         contentHeight = attributeControls.isEmpty() ? 88 : attributeControls.size() * ATTRIBUTE_ROW_HEIGHT;
     }
 
@@ -255,10 +340,11 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             return;
         }
 
-        if (!validateNaturalInputs()) {
+        if (!validateNaturalInputs() || !validateActiveInputs()) {
             return;
         }
         NaturalSpawnSettings naturalSettings = collectNaturalSettings();
+        ActiveSpawnSettings activeSettings = collectActiveSettings();
 
         for (MobSpawnType type : spawnTypes) {
             Boolean value = editRules.get(type);
@@ -271,6 +357,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             NetworkBridge.sendToServer(new ServerboundSetAttributesPayload(mobId, collectAttributeOverrides()));
         }
         NetworkBridge.sendToServer(new ServerboundSetNaturalSpawnPayload(mobId, naturalSettings));
+        NetworkBridge.sendToServer(new ServerboundSetActiveSpawnPayload(mobId, activeSettings));
 
         EnumMap<MobSpawnType, Boolean> parentMap = parent.getRules()
                 .computeIfAbsent(mobId, key -> new EnumMap<>(MobSpawnType.class));
@@ -280,6 +367,11 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             parent.getNaturalSpawnSettings().remove(mobId);
         } else {
             parent.getNaturalSpawnSettings().put(mobId, naturalSettings);
+        }
+        if (activeSettings.isDefault()) {
+            parent.getActiveSpawnSettings().remove(mobId);
+        } else {
+            parent.getActiveSpawnSettings().put(mobId, activeSettings);
         }
 
         mc.setScreen(parent);
@@ -345,6 +437,71 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         naturalSlimeChunk = settings.slimeChunkMode();
     }
 
+    private void loadActiveSettings(ActiveSpawnSettings settings) {
+        activeInputs.clear();
+        activeSelectorModes.clear();
+        activeSelections.clear();
+        activeEnabled = settings.enabled();
+        activeObeySpawnRules = settings.obeySpawnRules();
+        activePlacement = settings.placement();
+        activeSky = settings.skyMode();
+        activeInputs.put("chance", formatNaturalNumber(settings.chancePerSecond() * 100.0));
+        activeInputs.put("attempts", String.valueOf(settings.attempts()));
+        activeInputs.put("min_amount", String.valueOf(settings.minAmount()));
+        activeInputs.put("max_amount", String.valueOf(settings.maxAmount()));
+        activeInputs.put("min_distance", String.valueOf(settings.minDistance()));
+        activeInputs.put("max_distance", String.valueOf(settings.maxDistance()));
+        putActive("min_players", settings.minPlayers());
+        putActive("max_players", settings.maxPlayers());
+        putActive("min_spawn_distance", settings.minWorldSpawnDistance());
+        putActive("max_spawn_distance", settings.maxWorldSpawnDistance());
+        putActive("min_height", settings.minHeight());
+        putActive("max_height", settings.maxHeight());
+        putActive("min_day", settings.minDay());
+        putActive("max_day", settings.maxDay());
+        putActive("min_time", settings.minTime());
+        putActive("max_time", settings.maxTime());
+        putActive("min_total_light", settings.minTotalLight());
+        putActive("max_total_light", settings.maxTotalLight());
+        putActive("min_sky_light", settings.minSkyLight());
+        putActive("max_sky_light", settings.maxSkyLight());
+        putActive("min_block_light", settings.minBlockLight());
+        putActive("max_block_light", settings.maxBlockLight());
+        putActive("min_local_difficulty", settings.minLocalDifficulty());
+        putActive("max_local_difficulty", settings.maxLocalDifficulty());
+        putActive("max_world_count", settings.maxWorldCount());
+        putActive("max_nearby_count", settings.maxNearbyCount());
+        activeInputs.put("nearby_radius", formatNaturalNumber(settings.nearbyRadius()));
+        loadActiveSelector("moon_phase_list",
+                settings.moonPhases().stream().map(String::valueOf).toList(),
+                settings.excludedMoonPhases().stream().map(String::valueOf).toList());
+        loadActiveSelector("season_list", settings.seasons(), settings.excludedSeasons());
+        loadActiveSelector("dimension_list", resourceStrings(settings.dimensions()),
+                resourceStrings(settings.excludedDimensions()));
+        loadActiveSelector("biome_list", combineIdsAndTags(settings.biomes(), settings.biomeTags()),
+                combineIdsAndTags(settings.excludedBiomes(), settings.excludedBiomeTags()));
+        loadActiveSelector("structure_list", settings.structures(), settings.excludedStructures());
+        loadActiveSelector("block_below_list", settings.blocksBelow(), settings.excludedBlocksBelow());
+        loadActiveSelector("block_at_list", settings.blocksAt(), settings.excludedBlocksAt());
+        loadActiveSelector("block_above_list", settings.blocksAbove(), settings.excludedBlocksAbove());
+        activeWeather = settings.weather();
+        activeDifficulty = settings.difficulty();
+        activeSlimeChunk = settings.slimeChunkMode();
+    }
+
+    private void putActive(String key, Number value) {
+        activeInputs.put(key, value == null ? "" : formatNaturalNumber(value.doubleValue()));
+    }
+
+    private void loadActiveSelector(String key, List<String> whitelist, List<String> blacklist) {
+        boolean useBlacklist = whitelist.isEmpty() && !blacklist.isEmpty();
+        activeSelectorModes.put(key, useBlacklist ? SelectorMode.BLACKLIST : SelectorMode.WHITELIST);
+        EnumMap<SelectorMode, List<String>> selections = new EnumMap<>(SelectorMode.class);
+        selections.put(SelectorMode.WHITELIST, new ArrayList<>(whitelist));
+        selections.put(SelectorMode.BLACKLIST, new ArrayList<>(blacklist));
+        activeSelections.put(key, selections);
+    }
+
     private void putNatural(String key, Number value) {
         naturalInputs.put(key, value == null ? "" : formatNaturalNumber(value.doubleValue()));
     }
@@ -397,6 +554,104 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
                 selectedSpawnTypes("spawn_type_list", SelectorMode.BLACKLIST));
     }
 
+    private ActiveSpawnSettings collectActiveSettings() {
+        return new ActiveSpawnSettings(activeEnabled,
+                parseActiveDouble("chance", 100.0) / 100.0,
+                parseActiveInteger("attempts", 4),
+                parseActiveInteger("min_amount", 1), parseActiveInteger("max_amount", 1),
+                parseActiveInteger("min_distance", 24), parseActiveInteger("max_distance", 64),
+                parseActiveInteger("min_height"), parseActiveInteger("max_height"),
+                parseActiveInteger("min_day"), parseActiveInteger("max_day"),
+                parseActiveInteger("min_time"), parseActiveInteger("max_time"),
+                parseActiveInteger("min_total_light"), parseActiveInteger("max_total_light"),
+                parseActiveInteger("max_world_count"), parseActiveInteger("max_nearby_count"),
+                parseActiveDouble("nearby_radius", 32.0), activePlacement, activeObeySpawnRules, activeSky,
+                parseActiveInteger("min_players"), parseActiveInteger("max_players"),
+                parseActiveNullableDouble("min_spawn_distance"),
+                parseActiveNullableDouble("max_spawn_distance"),
+                parseActiveNullableDouble("min_local_difficulty"),
+                parseActiveNullableDouble("max_local_difficulty"),
+                parseActiveInteger("min_sky_light"), parseActiveInteger("max_sky_light"),
+                parseActiveInteger("min_block_light"), parseActiveInteger("max_block_light"),
+                selectedActiveInts("moon_phase_list", SelectorMode.WHITELIST),
+                selectedActiveInts("moon_phase_list", SelectorMode.BLACKLIST),
+                activeWeather, activeDifficulty, activeSlimeChunk,
+                selectedActiveResources("dimension_list", SelectorMode.WHITELIST, false),
+                selectedActiveResources("dimension_list", SelectorMode.BLACKLIST, false),
+                selectedActiveResources("biome_list", SelectorMode.WHITELIST, false),
+                selectedActiveResources("biome_list", SelectorMode.BLACKLIST, false),
+                selectedActiveResources("biome_list", SelectorMode.WHITELIST, true),
+                selectedActiveResources("biome_list", SelectorMode.BLACKLIST, true),
+                selectedActiveStrings("season_list", SelectorMode.WHITELIST),
+                selectedActiveStrings("season_list", SelectorMode.BLACKLIST),
+                selectedActiveStrings("structure_list", SelectorMode.WHITELIST),
+                selectedActiveStrings("structure_list", SelectorMode.BLACKLIST),
+                selectedActiveStrings("block_below_list", SelectorMode.WHITELIST),
+                selectedActiveStrings("block_below_list", SelectorMode.BLACKLIST),
+                selectedActiveStrings("block_at_list", SelectorMode.WHITELIST),
+                selectedActiveStrings("block_at_list", SelectorMode.BLACKLIST),
+                selectedActiveStrings("block_above_list", SelectorMode.WHITELIST),
+                selectedActiveStrings("block_above_list", SelectorMode.BLACKLIST));
+    }
+
+    private Integer parseActiveInteger(String key) {
+        Double value = parseActiveNullableDouble(key);
+        return value == null ? null : value.intValue();
+    }
+
+    private int parseActiveInteger(String key, int fallback) {
+        Integer value = parseActiveInteger(key);
+        return value == null ? fallback : value;
+    }
+
+    private Double parseActiveNullableDouble(String key) {
+        String text = activeInputs.get(key);
+        if (text == null || text.isBlank()) return null;
+        try {
+            double value = Double.parseDouble(text.trim());
+            return Double.isFinite(value) ? value : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private double parseActiveDouble(String key, double fallback) {
+        Double value = parseActiveNullableDouble(key);
+        return value == null ? fallback : value;
+    }
+
+    private List<ResourceLocation> selectedActiveResources(String key, SelectorMode mode, boolean tagsOnly) {
+        List<ResourceLocation> result = new ArrayList<>();
+        for (String value : activeSelection(key, mode)) {
+            boolean tag = value.startsWith("#");
+            if (tag != tagsOnly) continue;
+            ResourceLocation id = ResourceLocation.tryParse(tag ? value.substring(1) : value);
+            if (id != null) result.add(id);
+        }
+        return result.stream().distinct().toList();
+    }
+
+    private List<String> selectedActiveStrings(String key, SelectorMode mode) {
+        return activeSelection(key, mode).stream().map(String::trim)
+                .filter(value -> !value.isEmpty()).distinct().toList();
+    }
+
+    private List<Integer> selectedActiveInts(String key, SelectorMode mode) {
+        List<Integer> values = new ArrayList<>();
+        for (String value : activeSelection(key, mode)) {
+            try {
+                values.add(Integer.parseInt(value));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return values;
+    }
+
+    private List<String> activeSelection(String key, SelectorMode mode) {
+        EnumMap<SelectorMode, List<String>> selections = activeSelections.get(key);
+        return selections == null ? List.of() : selections.getOrDefault(mode, List.of());
+    }
+
     private Integer parseNaturalInteger(String key) {
         Double value = parseNaturalNullableDouble(key);
         return value == null ? null : value.intValue();
@@ -423,6 +678,61 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             return false;
         }
         return validateBlockSelections();
+    }
+
+    private boolean validateActiveInputs() {
+        List<String> invalidNumbers = new ArrayList<>();
+        ACTIVE_NUMBER_RULES.forEach((key, rule) -> {
+            String text = activeInputs.get(key);
+            if (text != null && !text.isBlank() && !rule.accepts(text)) {
+                invalidNumbers.add(Component.translatable("gui.mobspawncontroller.active." + key).getString());
+            }
+        });
+        if (!invalidNumbers.isEmpty()) {
+            showValidationError("gui.mobspawncontroller.natural.error.invalid_numbers",
+                    String.join(", ", invalidNumbers.subList(0, Math.min(3, invalidNumbers.size()))));
+            return false;
+        }
+
+        List<String> invalidRanges = new ArrayList<>();
+        checkActiveRange(invalidRanges, "amount_range", "min_amount", "max_amount");
+        checkActiveRange(invalidRanges, "players_range", "min_players", "max_players");
+        checkActiveRange(invalidRanges, "distance_range", "min_distance", "max_distance");
+        checkActiveRange(invalidRanges, "spawn_distance_range", "min_spawn_distance", "max_spawn_distance");
+        checkActiveRange(invalidRanges, "height_range", "min_height", "max_height");
+        checkActiveRange(invalidRanges, "day_range", "min_day", "max_day");
+        checkActiveRange(invalidRanges, "total_light_range", "min_total_light", "max_total_light");
+        checkActiveRange(invalidRanges, "sky_light_range", "min_sky_light", "max_sky_light");
+        checkActiveRange(invalidRanges, "block_light_range", "min_block_light", "max_block_light");
+        checkActiveRange(invalidRanges, "local_difficulty_range",
+                "min_local_difficulty", "max_local_difficulty");
+        if (!invalidRanges.isEmpty()) {
+            showValidationError("gui.mobspawncontroller.natural.error.range_min_max",
+                    String.join(", ", invalidRanges.subList(0, Math.min(3, invalidRanges.size()))));
+            return false;
+        }
+        List<String> invalidBlocks = new ArrayList<>();
+        for (String key : List.of("block_below_list", "block_at_list", "block_above_list")) {
+            for (SelectorMode mode : SelectorMode.values()) {
+                for (String value : activeSelection(key, mode)) {
+                    if (!BlockIdListEditScreen.isValidBlockSelector(value)) invalidBlocks.add(value);
+                }
+            }
+        }
+        if (!invalidBlocks.isEmpty()) {
+            showValidationError("gui.mobspawncontroller.natural.error.invalid_blocks",
+                    String.join(", ", invalidBlocks.subList(0, Math.min(3, invalidBlocks.size()))));
+            return false;
+        }
+        return true;
+    }
+
+    private void checkActiveRange(List<String> invalid, String labelKey, String minKey, String maxKey) {
+        Double min = parseActiveNullableDouble(minKey);
+        Double max = parseActiveNullableDouble(maxKey);
+        if (min != null && max != null && min > max) {
+            invalid.add(Component.translatable("gui.mobspawncontroller.active." + labelKey).getString());
+        }
     }
 
     private boolean validateNaturalNumbers() {
@@ -582,6 +892,11 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         loadNaturalSettings(NaturalSpawnSettings.defaults());
     }
 
+    private void resetActiveSettings() {
+        focusedActiveField = null;
+        loadActiveSettings(ActiveSpawnSettings.defaults());
+    }
+
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         this.renderBackground(guiGraphics);
@@ -605,6 +920,8 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             renderSpawnRows(guiGraphics, mouseX, mouseY);
         } else if (activeTab == DetailTab.NATURAL_SPAWN) {
             renderNaturalRows(guiGraphics, mouseX, mouseY);
+        } else if (activeTab == DetailTab.ACTIVE_SPAWN) {
+            renderActiveRows(guiGraphics, mouseX, mouseY);
         } else {
             renderAttributeRows(guiGraphics, mouseX, mouseY);
         }
@@ -665,6 +982,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         Component tabLabel = switch (activeTab) {
             case SPAWN_RULES -> Component.translatable("gui.mobspawncontroller.tab.spawn_rules");
             case NATURAL_SPAWN -> Component.translatable("gui.mobspawncontroller.tab.natural_spawn");
+            case ACTIVE_SPAWN -> Component.translatable("gui.mobspawncontroller.tab.extra_spawn");
             case ATTRIBUTES -> Component.translatable("gui.mobspawncontroller.tab.attributes");
         };
         guiGraphics.drawString(this.font, tabLabel, textX, headerY + 25, 0xFF7DD3FC);
@@ -683,7 +1001,9 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         int x = panelRight - 14 - HEADER_RESET_W;
         int y = headerY + 7;
         int modifiedCount = activeTab == DetailTab.NATURAL_SPAWN
-                ? (collectNaturalSettings().isDefault() ? 0 : 1) : modifiedAttributeCount();
+                ? (collectNaturalSettings().isDefault() ? 0 : 1)
+                : activeTab == DetailTab.ACTIVE_SPAWN
+                ? (collectActiveSettings().isDefault() ? 0 : 1) : modifiedAttributeCount();
         boolean active = modifiedCount > 0;
         boolean hovered = mouseX >= x && mouseX < x + HEADER_RESET_W && mouseY >= y && mouseY < y + 18;
         guiGraphics.fill(x, y, x + HEADER_RESET_W, y + 18,
@@ -700,13 +1020,15 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
 
     private void renderTabs(GuiGraphics guiGraphics, int mouseX, int mouseY) {
         int tabY = panelTop + HEADER_HEIGHT - TAB_HEIGHT - 6;
-        int tabWidth = (panelRight - panelLeft - PANEL_INSET * 2 - 8) / 3;
+        int tabWidth = (panelRight - panelLeft - PANEL_INSET * 2 - 12) / 4;
         int firstTabX = panelLeft + PANEL_INSET;
         renderTab(guiGraphics, mouseX, mouseY, firstTabX, tabY, tabWidth, DetailTab.SPAWN_RULES,
                 Component.translatable("gui.mobspawncontroller.tab.spawn_rules"));
         renderTab(guiGraphics, mouseX, mouseY, firstTabX + tabWidth + 4, tabY, tabWidth, DetailTab.NATURAL_SPAWN,
                 Component.translatable("gui.mobspawncontroller.tab.natural_spawn"));
-        renderTab(guiGraphics, mouseX, mouseY, firstTabX + (tabWidth + 4) * 2, tabY, tabWidth, DetailTab.ATTRIBUTES,
+        renderTab(guiGraphics, mouseX, mouseY, firstTabX + (tabWidth + 4) * 2, tabY, tabWidth, DetailTab.ACTIVE_SPAWN,
+                Component.translatable("gui.mobspawncontroller.tab.extra_spawn"));
+        renderTab(guiGraphics, mouseX, mouseY, firstTabX + (tabWidth + 4) * 3, tabY, tabWidth, DetailTab.ATTRIBUTES,
                 Component.translatable("gui.mobspawncontroller.tab.attributes"));
     }
 
@@ -923,6 +1245,146 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             case "fluid" -> naturalFluid.name();
             case "slime_chunk" -> naturalSlimeChunk.name();
             default -> "ANY";
+        };
+        return Component.translatable("gui.mobspawncontroller.natural.option."
+                + value.toLowerCase(Locale.ROOT)).getString();
+    }
+
+    private void renderActiveRows(GuiGraphics graphics, int mouseX, int mouseY) {
+        int y = listTop - (int) scrollOffset;
+        int inputX = panelRight - PANEL_INSET - NATURAL_INPUT_W - 6;
+        for (int i = 0; i < activeFields.size(); i++) {
+            NaturalField field = activeFields.get(i);
+            int rowY = y + i * NATURAL_ROW_HEIGHT;
+            if (rowY + NATURAL_ROW_HEIGHT < listTop || rowY > listBottom) continue;
+            boolean hovered = mouseX >= panelLeft + PANEL_INSET && mouseX < panelRight - PANEL_INSET
+                    && mouseY >= rowY && mouseY < rowY + NATURAL_ROW_HEIGHT;
+            graphics.fill(panelLeft + PANEL_INSET, rowY, panelRight - PANEL_INSET,
+                    rowY + NATURAL_ROW_HEIGHT - 1, hovered ? ROW_HOVER_BG : (i % 2 == 0 ? ROW_BG : 0x08000000));
+
+            int labelX = panelLeft + 16;
+            int labelWidth = inputX - labelX - 10;
+            String baseKey = "gui.mobspawncontroller.active." + field.key();
+            graphics.drawString(font, trimToWidth(Component.translatable(baseKey).getString(), labelWidth),
+                    labelX, rowY + 4, 0xFFE5E7EB);
+            graphics.drawString(font, trimToWidth(Component.translatable(baseKey + ".hint").getString(), labelWidth),
+                    labelX, rowY + 16, 0xFF7B8794);
+
+            int inputY = rowY + 6;
+            if (field.type() == NaturalFieldType.RANGE) {
+                renderActiveRangeControl(graphics, field.key(), inputX, inputY, mouseX, mouseY);
+            } else if (field.type() == NaturalFieldType.PICKER) {
+                renderActivePickerControl(graphics, field.key(), inputX, inputY, mouseX, mouseY);
+            } else if (field.type() == NaturalFieldType.CYCLE) {
+                renderActiveCycleControl(graphics, field.key(), inputX, inputY, mouseX, mouseY);
+            } else if (field.type() == NaturalFieldType.SWITCH) {
+                boolean state = field.key().equals("enabled") ? activeEnabled : activeObeySpawnRules;
+                int toggleX = inputX + NATURAL_INPUT_W - TOGGLE_W;
+                drawToggle(graphics, toggleX, inputY + 1, state, mouseX, mouseY);
+            } else {
+                renderActiveNumberInput(graphics, field.key(), inputX, inputY, NATURAL_INPUT_W, "", mouseX, mouseY);
+            }
+        }
+    }
+
+    private void renderActiveRangeControl(GuiGraphics graphics, String key, int x, int y,
+                                          int mouseX, int mouseY) {
+        String[] keys = activeRangeKeys(key);
+        int gap = 12;
+        int width = (NATURAL_INPUT_W - gap) / 2;
+        renderActiveNumberInput(graphics, keys[0], x, y, width,
+                Component.translatable("gui.mobspawncontroller.natural.range.min").getString(), mouseX, mouseY);
+        graphics.drawCenteredString(font, "~", x + width + gap / 2, y + 5, 0xFF94A3B8);
+        renderActiveNumberInput(graphics, keys[1], x + width + gap, y, width,
+                Component.translatable("gui.mobspawncontroller.natural.range.max").getString(), mouseX, mouseY);
+    }
+
+    private void renderActiveNumberInput(GuiGraphics graphics, String key, int x, int y, int width,
+                                         String placeholder, int mouseX, int mouseY) {
+        boolean focused = key.equals(focusedActiveField);
+        boolean hovered = mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + 18;
+        graphics.fill(x, y, x + width, y + 18, 0xFF111827);
+        graphics.renderOutline(x, y, width, 18, focused ? ACCENT_COLOR : hovered ? 0xFF64748B : 0xFF374151);
+        String value = activeInputs.getOrDefault(key, "");
+        String shown = value.isEmpty() ? (placeholder.isEmpty()
+                ? Component.translatable("gui.mobspawncontroller.natural.unlimited").getString() : placeholder) : value;
+        graphics.drawString(font, trimToWidth(shown, width - 8), x + 4, y + 5,
+                value.isEmpty() ? 0xFF6B7280 : 0xFFE5E7EB);
+        if (focused && System.currentTimeMillis() / 500L % 2L == 0L) {
+            int cursorX = Math.min(x + width - 4, x + 4 + font.width(trimToWidth(value, width - 9)));
+            graphics.fill(cursorX, y + 4, cursorX + 1, y + 14, 0xFFFFFFFF);
+        }
+    }
+
+    private static String[] activeRangeKeys(String key) {
+        return switch (key) {
+            case "amount_range" -> new String[]{"min_amount", "max_amount"};
+            case "players_range" -> new String[]{"min_players", "max_players"};
+            case "distance_range" -> new String[]{"min_distance", "max_distance"};
+            case "spawn_distance_range" -> new String[]{"min_spawn_distance", "max_spawn_distance"};
+            case "height_range" -> new String[]{"min_height", "max_height"};
+            case "day_range" -> new String[]{"min_day", "max_day"};
+            case "time_range" -> new String[]{"min_time", "max_time"};
+            case "total_light_range" -> new String[]{"min_total_light", "max_total_light"};
+            case "sky_light_range" -> new String[]{"min_sky_light", "max_sky_light"};
+            case "block_light_range" -> new String[]{"min_block_light", "max_block_light"};
+            case "local_difficulty_range" -> new String[]{"min_local_difficulty", "max_local_difficulty"};
+            default -> throw new IllegalArgumentException("Unknown active spawn range: " + key);
+        };
+    }
+
+    private void renderActivePickerControl(GuiGraphics graphics, String key, int x, int y,
+                                           int mouseX, int mouseY) {
+        int modeWidth = 62;
+        int gap = 4;
+        int pickerX = x + modeWidth + gap;
+        int pickerWidth = NATURAL_INPUT_W - modeWidth - gap;
+        SelectorMode mode = activeSelectorModes.getOrDefault(key, SelectorMode.WHITELIST);
+        boolean modeHovered = mouseX >= x && mouseX < x + modeWidth && mouseY >= y && mouseY < y + 18;
+        boolean pickerHovered = mouseX >= pickerX && mouseX < pickerX + pickerWidth
+                && mouseY >= y && mouseY < y + 18;
+        int modeColor = mode == SelectorMode.WHITELIST ? 0xFF166534 : 0xFF7F1D1D;
+        graphics.fill(x, y, x + modeWidth, y + 18, modeHovered ? brighten(modeColor) : modeColor);
+        graphics.renderOutline(x, y, modeWidth, 18,
+                mode == SelectorMode.WHITELIST ? 0xFF86EFAC : 0xFFFCA5A5);
+        graphics.drawCenteredString(font, Component.translatable("gui.mobspawncontroller.natural.option."
+                + mode.name().toLowerCase(Locale.ROOT)), x + modeWidth / 2, y + 5, 0xFFFFFFFF);
+
+        int count = activeSelection(key, mode).size();
+        graphics.fill(pickerX, y, pickerX + pickerWidth, y + 18, 0xFF111827);
+        graphics.renderOutline(pickerX, y, pickerWidth, 18, pickerHovered ? ACCENT_COLOR : 0xFF374151);
+        String text = Component.translatable("gui.mobspawncontroller.natural.selected_count", count).getString();
+        graphics.drawString(font, trimToWidth(text, pickerWidth - 18), pickerX + 4, y + 5, 0xFFE5E7EB);
+        graphics.drawString(font, ">", pickerX + pickerWidth - 12, y + 5, 0xFF7DD3FC);
+    }
+
+    private void renderActiveCycleControl(GuiGraphics graphics, String key, int x, int y,
+                                          int mouseX, int mouseY) {
+        int arrowW = 18;
+        int rightX = x + NATURAL_INPUT_W - arrowW;
+        boolean hovered = mouseX >= x && mouseX < x + NATURAL_INPUT_W && mouseY >= y && mouseY < y + 18;
+        boolean leftHovered = mouseX < x + arrowW && hovered;
+        boolean rightHovered = mouseX >= rightX && hovered;
+        graphics.fill(x, y, x + NATURAL_INPUT_W, y + 18, 0xFF111827);
+        graphics.renderOutline(x, y, NATURAL_INPUT_W, 18, hovered ? 0xFF64748B : 0xFF374151);
+        graphics.fill(x, y, x + arrowW, y + 18, leftHovered ? 0xFF5A9CC0 : 0xFF4A7C9B);
+        graphics.fill(rightX, y, rightX + arrowW, y + 18, rightHovered ? 0xFF5A9CC0 : 0xFF4A7C9B);
+        graphics.drawCenteredString(font, "<", x + arrowW / 2, y + 5, 0xFFFFFFFF);
+        graphics.drawCenteredString(font, ">", rightX + arrowW / 2, y + 5, 0xFFFFFFFF);
+        graphics.drawString(font, trimToWidth(activeCycleLabel(key), NATURAL_INPUT_W - arrowW * 2 - 8),
+                x + arrowW + 4, y + 5, 0xFFE5E7EB);
+    }
+
+    private String activeCycleLabel(String key) {
+        if (key.equals("placement")) {
+            return Component.translatable("gui.mobspawncontroller.active.option."
+                    + activePlacement.name().toLowerCase(Locale.ROOT)).getString();
+        }
+        String value = switch (key) {
+            case "weather" -> activeWeather.name();
+            case "difficulty" -> activeDifficulty.name();
+            case "slime_chunk" -> activeSlimeChunk.name();
+            default -> activeSky.name();
         };
         return Component.translatable("gui.mobspawncontroller.natural.option."
                 + value.toLowerCase(Locale.ROOT)).getString();
@@ -1153,6 +1615,10 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             return handleNaturalClick(mouseX, mouseY);
         }
 
+        if (activeTab == DetailTab.ACTIVE_SPAWN) {
+            return handleActiveClick(mouseX, mouseY);
+        }
+
         if (activeTab != DetailTab.SPAWN_RULES) {
             return false;
         }
@@ -1235,6 +1701,82 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         }
         focusedNaturalField = null;
         return false;
+    }
+
+    private boolean handleActiveClick(double mouseX, double mouseY) {
+        if (mouseX < panelLeft || mouseX > panelRight || mouseY < listTop || mouseY > listBottom) {
+            focusedActiveField = null;
+            return false;
+        }
+        int y = listTop - (int) scrollOffset;
+        int inputX = panelRight - PANEL_INSET - NATURAL_INPUT_W - 6;
+        for (int i = 0; i < activeFields.size(); i++) {
+            NaturalField field = activeFields.get(i);
+            int inputY = y + i * NATURAL_ROW_HEIGHT + 6;
+            if (mouseX < inputX || mouseX >= inputX + NATURAL_INPUT_W
+                    || mouseY < inputY || mouseY >= inputY + 18) continue;
+            focusedActiveField = null;
+            focusedNaturalField = null;
+            focusedAttributeId = null;
+            if (field.type() == NaturalFieldType.RANGE) {
+                String[] keys = activeRangeKeys(field.key());
+                int gap = 12;
+                int rangeWidth = (NATURAL_INPUT_W - gap) / 2;
+                if (mouseX < inputX + rangeWidth) focusedActiveField = keys[0];
+                else if (mouseX >= inputX + rangeWidth + gap) focusedActiveField = keys[1];
+            } else if (field.type() == NaturalFieldType.PICKER) {
+                if (mouseX < inputX + 62) {
+                    SelectorMode current = activeSelectorModes.getOrDefault(field.key(), SelectorMode.WHITELIST);
+                    activeSelectorModes.put(field.key(), current.next());
+                } else {
+                    openActivePicker(field.key());
+                }
+            } else if (field.type() == NaturalFieldType.CYCLE) {
+                boolean previous = mouseX < inputX + 18;
+                switch (field.key()) {
+                    case "placement" -> activePlacement = previous ? activePlacement.previous() : activePlacement.next();
+                    case "weather" -> activeWeather = previous ? activeWeather.previous() : activeWeather.next();
+                    case "difficulty" -> activeDifficulty = previous ? activeDifficulty.previous() : activeDifficulty.next();
+                    case "slime_chunk" -> activeSlimeChunk = previous ? activeSlimeChunk.previous() : activeSlimeChunk.next();
+                    default -> activeSky = previous ? activeSky.previous() : activeSky.next();
+                }
+            } else if (field.type() == NaturalFieldType.SWITCH) {
+                if (field.key().equals("enabled")) activeEnabled = !activeEnabled;
+                else activeObeySpawnRules = !activeObeySpawnRules;
+            } else {
+                focusedActiveField = field.key();
+            }
+            return true;
+        }
+        focusedActiveField = null;
+        return false;
+    }
+
+    private void openActivePicker(String key) {
+        SelectorMode mode = activeSelectorModes.getOrDefault(key, SelectorMode.WHITELIST);
+        if (key.equals("block_below_list") || key.equals("block_at_list") || key.equals("block_above_list")) {
+            Component title = Component.translatable("gui.mobspawncontroller.active." + key).copy()
+                    .append(" · ").append(Component.translatable("gui.mobspawncontroller.natural.option."
+                            + mode.name().toLowerCase(Locale.ROOT)));
+            Minecraft.getInstance().setScreen(new BlockIdListEditScreen(this, title,
+                    activeSelection(key, mode), selected -> setActiveSelection(key, mode, selected)));
+            return;
+        }
+        List<NaturalRegistryPickerScreen.Option> options;
+        try {
+            options = naturalPickerOptions(key);
+        } catch (Exception exception) {
+            MobSpawnController.LOGGER.warn("Failed to collect active spawn options for {}", key, exception);
+            options = List.of();
+        }
+        Component title = Component.translatable("gui.mobspawncontroller.active." + key);
+        Minecraft.getInstance().setScreen(new NaturalRegistryPickerScreen(this, title, options,
+                activeSelection(key, mode), selected -> setActiveSelection(key, mode, selected)));
+    }
+
+    private void setActiveSelection(String key, SelectorMode mode, List<String> selected) {
+        activeSelections.computeIfAbsent(key, ignored -> new EnumMap<>(SelectorMode.class))
+                .put(mode, new ArrayList<>(selected));
     }
 
     private void openNaturalPicker(String key) {
@@ -1395,6 +1937,8 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         if (mouseX >= x && mouseX < x + HEADER_RESET_W && mouseY >= y && mouseY < y + 18) {
             if (activeTab == DetailTab.NATURAL_SPAWN) {
                 resetNaturalSettings();
+            } else if (activeTab == DetailTab.ACTIVE_SPAWN) {
+                resetActiveSettings();
             } else {
                 resetAllAttributes();
             }
@@ -1405,7 +1949,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
 
     private boolean handleTabClick(double mouseX, double mouseY) {
         int tabY = panelTop + HEADER_HEIGHT - TAB_HEIGHT - 6;
-        int tabWidth = (panelRight - panelLeft - PANEL_INSET * 2 - 8) / 3;
+        int tabWidth = (panelRight - panelLeft - PANEL_INSET * 2 - 12) / 4;
         int firstTabX = panelLeft + PANEL_INSET;
         if (mouseY < tabY || mouseY >= tabY + TAB_HEIGHT) {
             return false;
@@ -1421,6 +1965,11 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         }
         int thirdTabX = firstTabX + (tabWidth + 4) * 2;
         if (mouseX >= thirdTabX && mouseX < thirdTabX + tabWidth) {
+            setActiveTab(DetailTab.ACTIVE_SPAWN);
+            return true;
+        }
+        int fourthTabX = firstTabX + (tabWidth + 4) * 3;
+        if (mouseX >= fourthTabX && mouseX < fourthTabX + tabWidth) {
             setActiveTab(DetailTab.ATTRIBUTES);
             return true;
         }
@@ -1434,6 +1983,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         activeTab = tab;
         focusedAttributeId = null;
         focusedNaturalField = null;
+        focusedActiveField = null;
         scrollOffset = 0;
         updateContentHeight();
     }
@@ -1455,6 +2005,12 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
     public void onNaturalSpawnSettingsReceived(Map<ResourceLocation, NaturalSpawnSettings> settings) {
         parent.onNaturalSpawnSettingsReceived(settings);
         loadNaturalSettings(settings.getOrDefault(mobId, NaturalSpawnSettings.defaults()));
+    }
+
+    @Override
+    public void onActiveSpawnSettingsReceived(Map<ResourceLocation, ActiveSpawnSettings> settings) {
+        parent.onActiveSpawnSettingsReceived(settings);
+        loadActiveSettings(settings.getOrDefault(mobId, ActiveSpawnSettings.defaults()));
     }
 
     @Override
@@ -1504,6 +2060,11 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
+        if (focusedActiveField != null && codePoint >= 32 && codePoint != 127 && isNumericInputChar(codePoint)) {
+            String value = activeInputs.getOrDefault(focusedActiveField, "");
+            if (value.length() < 256) activeInputs.put(focusedActiveField, value + codePoint);
+            return true;
+        }
         if (focusedNaturalField != null && codePoint >= 32 && codePoint != 127) {
             if (isNumericInputChar(codePoint)) {
                 String value = naturalInputs.getOrDefault(focusedNaturalField, "");
@@ -1520,6 +2081,30 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (focusedActiveField != null) {
+            String value = activeInputs.getOrDefault(focusedActiveField, "");
+            if (Screen.isPaste(keyCode)) {
+                String pasted = Minecraft.getInstance().keyboardHandler.getClipboard().chars()
+                        .mapToObj(chr -> String.valueOf((char) chr))
+                        .filter(chr -> isNumericInputChar(chr.charAt(0))).collect(Collectors.joining());
+                activeInputs.put(focusedActiveField, (value + pasted).substring(0,
+                        Math.min(256, value.length() + pasted.length())));
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                if (!value.isEmpty()) activeInputs.put(focusedActiveField, value.substring(0, value.length() - 1));
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_DELETE) {
+                activeInputs.put(focusedActiveField, "");
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER
+                    || keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                focusedActiveField = null;
+                return true;
+            }
+        }
         if (focusedNaturalField != null) {
             String value = naturalInputs.getOrDefault(focusedNaturalField, "");
             if (Screen.isPaste(keyCode)) {

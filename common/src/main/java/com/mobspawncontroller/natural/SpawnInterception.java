@@ -7,6 +7,7 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.SpawnGroupData;
 import net.minecraft.world.level.ServerLevelAccessor;
+import net.minecraft.server.level.ServerLevel;
 
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -29,6 +30,33 @@ public final class SpawnInterception {
 
     public static boolean isHandledBeforeMobFinalizeSpawn(Mob mob) {
         return platformHandlesFinalizeSpawn || PRECHECKED_MOBS.get().contains(mob);
+    }
+
+    /** Returns true only for a spawn explicitly prechecked by this coordinator. */
+    public static boolean isPrechecked(Mob mob) {
+        return PRECHECKED_MOBS.get().contains(mob);
+    }
+
+    /**
+     * Finalizes an extra-spawner mob through the general spawn switch and attribute overrides.
+     * Vanilla-spawn conditions are intentionally not evaluated because extra spawning has its own page.
+     * The marker prevents loader hooks from applying probabilistic conditions a second time.
+     */
+    public static boolean finalizeControlledSpawn(Mob mob, ServerLevel level, MobSpawnType spawnType) {
+        if (!MobSpawnManager.isSpawnTypeAllowed(mob, spawnType)) {
+            mob.discard();
+            return false;
+        }
+        MobSpawnManager.applyAttributeOverrides(mob);
+        Set<Mob> prechecked = PRECHECKED_MOBS.get();
+        prechecked.add(mob);
+        try {
+            mob.finalizeSpawn(level, level.getCurrentDifficultyAt(mob.blockPosition()), spawnType, null, null);
+            return !mob.isRemoved();
+        } finally {
+            prechecked.remove(mob);
+            if (prechecked.isEmpty()) PRECHECKED_MOBS.remove();
+        }
     }
 
     /**

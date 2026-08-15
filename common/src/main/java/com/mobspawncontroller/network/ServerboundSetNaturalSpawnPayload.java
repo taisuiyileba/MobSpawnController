@@ -29,6 +29,6 @@ public record ServerboundSetNaturalSpawnPayload(ResourceLocation mobId, NaturalS
         MobSpawnManager.save();
         NetworkBridge.sendToPlayer(player, new ClientboundSyncRulesPayload(
                 MobSpawnManager.getAllRules(), MobSpawnManager.getAttributeOverrideMobs(),
-                MobSpawnManager.getAllNaturalSpawnSettings()));
+                MobSpawnManager.getAllNaturalSpawnSettings(), MobSpawnManager.getAllActiveSpawnSettings()));
     }
 }
