@@ -1,5 +1,6 @@
 package com.mobspawncontroller.client.gui;
 
+import com.mobspawncontroller.active.ActiveSpawnSettings;
 import com.mobspawncontroller.client.ClientRuleSync;
 import com.mobspawncontroller.network.ServerboundRequestRulesPayload;
 import com.mobspawncontroller.natural.NaturalSpawnSettings;
@@ -47,6 +48,8 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
     private static final int ROW_HOVER_BG = 0x3F63B3ED;
     private static final int RULES_ACCENT_COLOR = 0xFFFFAA00;
     private static final int NATURAL_ACCENT_COLOR = 0xFF34D399;
+    private static final int ACTIVE_ACCENT_COLOR = 0xFFC084FC;
+    private static String savedSearchText = "";
 
     private EditBox searchBox;
     private boolean modDropdownOpen = false;
@@ -67,12 +70,15 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
             "gui.mobspawncontroller.filter.attributes_modified",
             "gui.mobspawncontroller.filter.attributes_unmodified",
             "gui.mobspawncontroller.filter.natural_modified",
-            "gui.mobspawncontroller.filter.natural_unmodified"
+            "gui.mobspawncontroller.filter.natural_unmodified",
+            "gui.mobspawncontroller.filter.active_modified",
+            "gui.mobspawncontroller.filter.active_unmodified"
     );
 
     private Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> rules = new HashMap<>();
     private Set<ResourceLocation> attributeModifiedMobIds = new HashSet<>();
     private Map<ResourceLocation, NaturalSpawnSettings> naturalSpawnSettings = new HashMap<>();
+    private Map<ResourceLocation, ActiveSpawnSettings> activeSpawnSettings = new HashMap<>();
     private List<ResourceLocation> allMobIds = new ArrayList<>();
     private List<ResourceLocation> filteredMobIds = new ArrayList<>();
 
@@ -113,7 +119,11 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
         int searchY = panelTop + 21;
         searchBox = new EditBox(this.font, listLeft, searchY, searchWidth, 18, Component.empty());
         searchBox.setMaxLength(128);
-        searchBox.setResponder(text -> applyFilter());
+        searchBox.setValue(savedSearchText);
+        searchBox.setResponder(text -> {
+            savedSearchText = text;
+            applyFilter();
+        });
         this.addRenderableWidget(searchBox);
 
         this.addRenderableWidget(Button.builder(Component.literal("\uD83D\uDD0D"), button -> {
@@ -157,6 +167,12 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
         applyFilter();
     }
 
+    @Override
+    public void onActiveSpawnSettingsReceived(Map<ResourceLocation, ActiveSpawnSettings> settings) {
+        this.activeSpawnSettings = new HashMap<>(settings);
+        applyFilter();
+    }
+
     public Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> getRules() {
         return rules;
     }
@@ -167,6 +183,10 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
 
     public Map<ResourceLocation, NaturalSpawnSettings> getNaturalSpawnSettings() {
         return naturalSpawnSettings;
+    }
+
+    public Map<ResourceLocation, ActiveSpawnSettings> getActiveSpawnSettings() {
+        return activeSpawnSettings;
     }
 
     private void applyFilter() {
@@ -237,6 +257,13 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
         }
         if (selectedAttributeStatus.equals("gui.mobspawncontroller.filter.natural_unmodified")) {
             return !naturalModified;
+        }
+        boolean activeModified = activeSpawnSettings.containsKey(id);
+        if (selectedAttributeStatus.equals("gui.mobspawncontroller.filter.active_modified")) {
+            return activeModified;
+        }
+        if (selectedAttributeStatus.equals("gui.mobspawncontroller.filter.active_unmodified")) {
+            return !activeModified;
         }
         return true;
     }
@@ -319,6 +346,7 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
             boolean hasAnyRule = mobRules != null && !mobRules.isEmpty();
             boolean hasAttributeOverride = attributeModifiedMobIds.contains(mobId);
             boolean hasNaturalSettings = naturalSpawnSettings.containsKey(mobId);
+            boolean hasActiveSettings = activeSpawnSettings.containsKey(mobId);
             boolean rowHovered = mouseX >= listLeft && mouseX < listRight && mouseY >= rowY && mouseY < rowY + ROW_HEIGHT;
             if (idx % 2 == 0) {
                 guiGraphics.fill(listLeft, rowY, listRight, rowY + ROW_HEIGHT - 1, ROW_BG);
@@ -333,6 +361,10 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
             }
             if (hasNaturalSettings) {
                 guiGraphics.fill(accentX, rowY, accentX + 2, rowY + ROW_HEIGHT - 1, NATURAL_ACCENT_COLOR);
+                accentX += 2;
+            }
+            if (hasActiveSettings) {
+                guiGraphics.fill(accentX, rowY, accentX + 2, rowY + ROW_HEIGHT - 1, ACTIVE_ACCENT_COLOR);
                 accentX += 2;
             }
             if (hasAnyRule) {

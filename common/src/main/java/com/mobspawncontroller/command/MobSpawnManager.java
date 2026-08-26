@@ -5,6 +5,8 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mobspawncontroller.MobSpawnController;
+import com.mobspawncontroller.active.ActiveSpawnSettings;
+import com.mobspawncontroller.active.ActiveSpawnSettingsJsonCodec;
 import com.mobspawncontroller.compat.SereneSeasonsCompat;
 import com.mobspawncontroller.natural.NaturalSpawnSettings;
 import com.mobspawncontroller.natural.NaturalSpawnSettingsJsonCodec;
@@ -56,10 +58,13 @@ public final class MobSpawnManager {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final String ATTRIBUTES_KEY = "attributes";
-    private static final String SPAWN_RESTRICTIONS_KEY = "spawn_restrictions";
+    private static final String VANILLA_SPAWN_KEY = "vanilla_spawn";
+    private static final String LEGACY_SPAWN_RESTRICTIONS_KEY = "spawn_restrictions";
+    private static final String EXTRA_SPAWN_KEY = "extra_spawn";
     private static final Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> RULES = new HashMap<>();
     private static final Map<ResourceLocation, Map<ResourceLocation, Double>> ATTRIBUTE_OVERRIDES = new HashMap<>();
     private static final Map<ResourceLocation, NaturalSpawnSettings> NATURAL_SPAWN_SETTINGS = new HashMap<>();
+    private static final Map<ResourceLocation, ActiveSpawnSettings> ACTIVE_SPAWN_SETTINGS = new HashMap<>();
     private static Path savePath;
 
     private MobSpawnManager() {
@@ -123,6 +128,22 @@ public final class MobSpawnManager {
         }
     }
 
+    public static ActiveSpawnSettings getActiveSpawnSettings(ResourceLocation mobId) {
+        return ACTIVE_SPAWN_SETTINGS.getOrDefault(mobId, ActiveSpawnSettings.defaults());
+    }
+
+    public static Map<ResourceLocation, ActiveSpawnSettings> getAllActiveSpawnSettings() {
+        return Collections.unmodifiableMap(ACTIVE_SPAWN_SETTINGS);
+    }
+
+    public static void setActiveSpawnSettings(ResourceLocation mobId, ActiveSpawnSettings settings) {
+        if (settings == null || settings.isDefault()) {
+            ACTIVE_SPAWN_SETTINGS.remove(mobId);
+        } else {
+            ACTIVE_SPAWN_SETTINGS.put(mobId, settings);
+        }
+    }
+
     public static void setAttributeOverrides(ResourceLocation mobId, Map<ResourceLocation, Double> attributes) {
         if (attributes.isEmpty()) {
             ATTRIBUTE_OVERRIDES.remove(mobId);
@@ -162,12 +183,14 @@ public final class MobSpawnManager {
         RULES.remove(mobId);
         ATTRIBUTE_OVERRIDES.remove(mobId);
         NATURAL_SPAWN_SETTINGS.remove(mobId);
+        ACTIVE_SPAWN_SETTINGS.remove(mobId);
     }
 
     public static void clearAll() {
         RULES.clear();
         ATTRIBUTE_OVERRIDES.clear();
         NATURAL_SPAWN_SETTINGS.clear();
+        ACTIVE_SPAWN_SETTINGS.clear();
     }
 
     public static void save() {
@@ -197,7 +220,17 @@ public final class MobSpawnManager {
                 mobObj = new JsonObject();
                 root.add(mobId.toString(), mobObj);
             }
-            mobObj.add(SPAWN_RESTRICTIONS_KEY, NaturalSpawnSettingsJsonCodec.encode(settings));
+            mobObj.add(VANILLA_SPAWN_KEY, NaturalSpawnSettingsJsonCodec.encode(settings));
+        });
+        ACTIVE_SPAWN_SETTINGS.forEach((mobId, settings) -> {
+            JsonObject mobObj;
+            if (root.has(mobId.toString())) {
+                mobObj = root.getAsJsonObject(mobId.toString());
+            } else {
+                mobObj = new JsonObject();
+                root.add(mobId.toString(), mobObj);
+            }
+            mobObj.add(EXTRA_SPAWN_KEY, ActiveSpawnSettingsJsonCodec.encode(settings));
         });
 
         try {
@@ -225,6 +258,7 @@ public final class MobSpawnManager {
         RULES.clear();
         ATTRIBUTE_OVERRIDES.clear();
         NATURAL_SPAWN_SETTINGS.clear();
+        ACTIVE_SPAWN_SETTINGS.clear();
         if (savePath == null || !Files.exists(savePath)) {
             return;
         }
@@ -248,12 +282,26 @@ public final class MobSpawnManager {
                         loadAttributeOverrides(mobId, typeEntry.getValue().getAsJsonObject());
                         continue;
                     }
-                    if (typeEntry.getKey().equals(SPAWN_RESTRICTIONS_KEY)
+                    if ((typeEntry.getKey().equals(VANILLA_SPAWN_KEY)
+                            || typeEntry.getKey().equals(LEGACY_SPAWN_RESTRICTIONS_KEY))
                             && typeEntry.getValue().isJsonObject()) {
+                        if (typeEntry.getKey().equals(LEGACY_SPAWN_RESTRICTIONS_KEY)
+                                && mobEntry.getValue().getAsJsonObject().has(VANILLA_SPAWN_KEY)) {
+                            continue;
+                        }
                         NaturalSpawnSettings settings = NaturalSpawnSettingsJsonCodec.decode(
                                 typeEntry.getValue().getAsJsonObject());
                         if (!settings.isDefault()) {
                             NATURAL_SPAWN_SETTINGS.put(mobId, settings);
+                        }
+                        continue;
+                    }
+                    if (typeEntry.getKey().equals(EXTRA_SPAWN_KEY)
+                            && typeEntry.getValue().isJsonObject()) {
+                        ActiveSpawnSettings settings = ActiveSpawnSettingsJsonCodec.decode(
+                                typeEntry.getValue().getAsJsonObject());
+                        if (!settings.isDefault()) {
+                            ACTIVE_SPAWN_SETTINGS.put(mobId, settings);
                         }
                         continue;
                     }
@@ -297,9 +345,14 @@ public final class MobSpawnManager {
 
     /** Applies the spawn-type switch first, then the detailed conditions when their type filter matches. */
     public static boolean isSpawnAllowed(Entity entity, ServerLevelAccessor level, MobSpawnType spawnType) {
+        return isSpawnTypeAllowed(entity, spawnType) && isNaturalSpawnAllowed(entity, level, spawnType);
+    }
+
+    /** Applies only the general spawn-type switch, without the vanilla-spawn condition page. */
+    public static boolean isSpawnTypeAllowed(Entity entity, MobSpawnType spawnType) {
         ResourceLocation mobId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         Boolean allowed = getAllowed(mobId, spawnType);
-        return (allowed == null || allowed) && isNaturalSpawnAllowed(entity, level, spawnType);
+        return allowed == null || allowed;
     }
 
     /** Returns false when an applicable spawn fails one of the configured GUI conditions. */

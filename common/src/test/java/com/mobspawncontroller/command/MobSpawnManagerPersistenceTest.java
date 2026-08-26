@@ -1,5 +1,8 @@
 package com.mobspawncontroller.command;
 
+import com.google.gson.JsonObject;
+import com.mobspawncontroller.active.ActiveSpawnSettings;
+import com.mobspawncontroller.active.ActiveSpawnSettingsJsonCodec;
 import com.mobspawncontroller.natural.NaturalSpawnSettings;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.MobSpawnType;
@@ -27,20 +30,27 @@ class MobSpawnManagerPersistenceTest {
     }
 
     @Test
-    void naturalRulesPersistAlongsideSpawnSwitchesAndAttributes() throws Exception {
+    void spawnSettingsPersistAlongsideSpawnSwitchesAndAttributes() throws Exception {
         ResourceLocation mobId = id("minecraft", "zombie");
         ResourceLocation attributeId = id("minecraft", "generic.max_health");
         NaturalSpawnSettings settings = settings();
+        JsonObject activeJson = new JsonObject();
+        activeJson.addProperty("enabled", true);
+        activeJson.addProperty("chance_per_second", 0.25);
+        activeJson.addProperty("max_world_count", 12);
+        ActiveSpawnSettings activeSettings = ActiveSpawnSettingsJsonCodec.decode(activeJson);
         Path rulesFile = tempDir.resolve("rules.json");
 
         MobSpawnManager.setSavePath(rulesFile);
         MobSpawnManager.setAllowed(mobId, MobSpawnType.NATURAL, false);
         MobSpawnManager.setAttributeOverrides(mobId, Map.of(attributeId, 40.0));
         MobSpawnManager.setNaturalSpawnSettings(mobId, settings);
+        MobSpawnManager.setActiveSpawnSettings(mobId, activeSettings);
         MobSpawnManager.save();
         String savedJson = Files.readString(rulesFile);
-        assertFalse(savedJson.contains("natural_spawn"));
-        assertTrue(savedJson.contains("spawn_restrictions"));
+        assertFalse(savedJson.contains("spawn_restrictions"));
+        assertTrue(savedJson.contains("vanilla_spawn"));
+        assertTrue(savedJson.contains("extra_spawn"));
 
         MobSpawnManager.clearAll();
         assertFalse(MobSpawnManager.getAllRules().containsKey(mobId));
@@ -49,6 +59,27 @@ class MobSpawnManagerPersistenceTest {
         assertEquals(Boolean.FALSE, MobSpawnManager.getAllowed(mobId, MobSpawnType.NATURAL));
         assertEquals(Map.of(attributeId, 40.0), MobSpawnManager.getAttributeOverrides(mobId));
         assertEquals(settings, MobSpawnManager.getNaturalSpawnSettings(mobId));
+        assertEquals(activeSettings, MobSpawnManager.getActiveSpawnSettings(mobId));
+    }
+
+    @Test
+    void legacySpawnRestrictionsStillLoad() throws Exception {
+        ResourceLocation mobId = id("minecraft", "zombie");
+        Path rulesFile = tempDir.resolve("legacy-rules.json");
+        Files.writeString(rulesFile, """
+                {
+                  "minecraft:zombie": {
+                    "spawn_restrictions": {
+                      "chance": 0.25
+                    }
+                  }
+                }
+                """);
+
+        MobSpawnManager.setSavePath(rulesFile);
+        MobSpawnManager.load();
+
+        assertEquals(0.25, MobSpawnManager.getNaturalSpawnSettings(mobId).chance());
     }
 
     @Test

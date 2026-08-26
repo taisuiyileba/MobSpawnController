@@ -1,6 +1,7 @@
 package com.mobspawncontroller.fabric;
 
 import com.mobspawncontroller.MobSpawnController;
+import com.mobspawncontroller.active.ActiveSpawner;
 import com.mobspawncontroller.command.MobSpawnCommand;
 import com.mobspawncontroller.network.ClientboundSyncAttributesPayload;
 import com.mobspawncontroller.network.ClientboundSyncRulesPayload;
@@ -9,6 +10,7 @@ import com.mobspawncontroller.network.ServerboundRequestAttributesPayload;
 import com.mobspawncontroller.network.ServerboundRequestRulesPayload;
 import com.mobspawncontroller.network.ServerboundRequestStructuresPayload;
 import com.mobspawncontroller.network.ServerboundSetAttributesPayload;
+import com.mobspawncontroller.network.ServerboundSetActiveSpawnPayload;
 import com.mobspawncontroller.network.ServerboundSetNaturalSpawnPayload;
 import com.mobspawncontroller.network.ServerboundToggleSpawnPayload;
 import com.mobspawncontroller.platform.NetworkBridge;
@@ -17,6 +19,7 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -49,6 +52,7 @@ public final class MobSpawnControllerFabric implements ModInitializer {
                 MobSpawnCommand.register(dispatcher));
         ServerLifecycleEvents.SERVER_STARTING.register(server -> MobSpawnController.serverStarting());
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> MobSpawnController.serverStopping());
+        ServerTickEvents.END_WORLD_TICK.register(ActiveSpawner::tick);
     }
 
     private static void registerPayloads() {
@@ -62,6 +66,8 @@ public final class MobSpawnControllerFabric implements ModInitializer {
                 ServerboundSetAttributesPayload.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(ServerboundSetNaturalSpawnPayload.TYPE,
                 ServerboundSetNaturalSpawnPayload.STREAM_CODEC);
+        PayloadTypeRegistry.playC2S().register(ServerboundSetActiveSpawnPayload.TYPE,
+                ServerboundSetActiveSpawnPayload.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(ServerboundRequestStructuresPayload.TYPE,
                 ServerboundRequestStructuresPayload.STREAM_CODEC);
         PayloadTypeRegistry.playS2C().register(ClientboundSyncRulesPayload.TYPE,
@@ -86,6 +92,9 @@ public final class MobSpawnControllerFabric implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(ServerboundSetNaturalSpawnPayload.TYPE,
                 (payload, context) -> context.server().execute(() ->
                         ServerboundSetNaturalSpawnPayload.handle(payload, context.player())));
+        ServerPlayNetworking.registerGlobalReceiver(ServerboundSetActiveSpawnPayload.TYPE,
+                (payload, context) -> context.server().execute(() ->
+                        ServerboundSetActiveSpawnPayload.handle(payload, context.player())));
         ServerPlayNetworking.registerGlobalReceiver(ServerboundRequestStructuresPayload.TYPE,
                 (payload, context) -> context.server().execute(() ->
                         ServerboundRequestStructuresPayload.handle(payload, context.player())));

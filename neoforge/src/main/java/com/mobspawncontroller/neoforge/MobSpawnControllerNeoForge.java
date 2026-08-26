@@ -1,6 +1,7 @@
 package com.mobspawncontroller.neoforge;
 
 import com.mobspawncontroller.MobSpawnController;
+import com.mobspawncontroller.active.ActiveSpawner;
 import com.mobspawncontroller.client.ClientRuleSync;
 import com.mobspawncontroller.command.MobSpawnCommand;
 import com.mobspawncontroller.command.MobSpawnManager;
@@ -11,6 +12,7 @@ import com.mobspawncontroller.network.ServerboundRequestAttributesPayload;
 import com.mobspawncontroller.network.ServerboundRequestRulesPayload;
 import com.mobspawncontroller.network.ServerboundRequestStructuresPayload;
 import com.mobspawncontroller.network.ServerboundSetAttributesPayload;
+import com.mobspawncontroller.network.ServerboundSetActiveSpawnPayload;
 import com.mobspawncontroller.network.ServerboundSetNaturalSpawnPayload;
 import com.mobspawncontroller.network.ServerboundToggleSpawnPayload;
 import com.mobspawncontroller.natural.SpawnInterception;
@@ -19,6 +21,7 @@ import com.mobspawncontroller.platform.NetworkBridge;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.MobSpawnType;
 import net.neoforged.api.distmarker.Dist;
@@ -33,6 +36,7 @@ import net.neoforged.neoforge.event.entity.living.FinalizeSpawnEvent;
 import net.neoforged.neoforge.event.entity.living.MobSpawnEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import net.neoforged.neoforge.event.tick.LevelTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 
@@ -53,6 +57,7 @@ public final class MobSpawnControllerNeoForge {
         NeoForge.EVENT_BUS.addListener(this::onSpawnPlacementCheck);
         NeoForge.EVENT_BUS.addListener(this::onPositionCheck);
         NeoForge.EVENT_BUS.addListener(this::onFinalizeSpawn);
+        NeoForge.EVENT_BUS.addListener(this::onLevelTick);
 
         if (FMLEnvironment.dist == Dist.CLIENT) {
             MobSpawnControllerNeoForgeClient.init(modBus);
@@ -60,7 +65,7 @@ public final class MobSpawnControllerNeoForge {
     }
 
     private void registerPayloads(RegisterPayloadHandlersEvent event) {
-        var registrar = event.registrar(MobSpawnController.MOD_ID).versioned("7").optional();
+        var registrar = event.registrar(MobSpawnController.MOD_ID).versioned("9").optional();
         registrar.playToServer(ServerboundToggleSpawnPayload.TYPE, ServerboundToggleSpawnPayload.STREAM_CODEC,
                 (payload, context) -> ServerboundToggleSpawnPayload.handle(payload, (ServerPlayer) context.player()));
         registrar.playToServer(ServerboundRequestRulesPayload.TYPE, ServerboundRequestRulesPayload.STREAM_CODEC,
@@ -71,6 +76,8 @@ public final class MobSpawnControllerNeoForge {
                 (payload, context) -> ServerboundSetAttributesPayload.handle(payload, (ServerPlayer) context.player()));
         registrar.playToServer(ServerboundSetNaturalSpawnPayload.TYPE, ServerboundSetNaturalSpawnPayload.STREAM_CODEC,
                 (payload, context) -> ServerboundSetNaturalSpawnPayload.handle(payload, (ServerPlayer) context.player()));
+        registrar.playToServer(ServerboundSetActiveSpawnPayload.TYPE, ServerboundSetActiveSpawnPayload.STREAM_CODEC,
+                (payload, context) -> ServerboundSetActiveSpawnPayload.handle(payload, (ServerPlayer) context.player()));
         registrar.playToServer(ServerboundRequestStructuresPayload.TYPE, ServerboundRequestStructuresPayload.STREAM_CODEC,
                 (payload, context) -> ServerboundRequestStructuresPayload.handle(payload, (ServerPlayer) context.player()));
         registrar.playToClient(ClientboundSyncRulesPayload.TYPE, ClientboundSyncRulesPayload.STREAM_CODEC,
@@ -112,11 +119,20 @@ public final class MobSpawnControllerNeoForge {
     }
 
     private void onFinalizeSpawn(FinalizeSpawnEvent event) {
+        if (SpawnInterception.isPrechecked(event.getEntity())) {
+            return;
+        }
         if (!MobSpawnManager.isSpawnAllowed(event.getEntity(), event.getLevel(), event.getSpawnType())) {
             event.setSpawnCancelled(true);
             return;
         }
         MobSpawnManager.applyAttributeOverrides(event.getEntity());
+    }
+
+    private void onLevelTick(LevelTickEvent.Post event) {
+        if (event.getLevel() instanceof ServerLevel level) {
+            ActiveSpawner.tick(level);
+        }
     }
 
     private static final class NeoForgePacketSender implements NetworkBridge.PacketSender {

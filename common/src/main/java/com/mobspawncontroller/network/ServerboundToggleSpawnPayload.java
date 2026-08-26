@@ -49,7 +49,8 @@ public record ServerboundToggleSpawnPayload(ResourceLocation mobId, String spawn
 
         Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> allRules = MobSpawnManager.getAllRules();
         NetworkBridge.sendToPlayer(player, new ClientboundSyncRulesPayload(allRules,
-                MobSpawnManager.getAttributeOverrideMobs(), MobSpawnManager.getAllNaturalSpawnSettings()));
+                MobSpawnManager.getAttributeOverrideMobs(), MobSpawnManager.getAllNaturalSpawnSettings(),
+                MobSpawnManager.getAllActiveSpawnSettings()));
     }
 
     @Override

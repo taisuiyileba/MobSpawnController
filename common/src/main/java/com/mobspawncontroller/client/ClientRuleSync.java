@@ -28,6 +28,7 @@ public final class ClientRuleSync {
             receiver.onRulesReceived(payload.rules());
             receiver.onAttributeModifiedMobsReceived(payload.attributeModifiedMobs());
             receiver.onNaturalSpawnSettingsReceived(payload.naturalSpawnSettings());
+            receiver.onActiveSpawnSettingsReceived(payload.activeSpawnSettings());
         }
     }
 
@@ -58,6 +59,10 @@ public final class ClientRuleSync {
 
         default void onNaturalSpawnSettingsReceived(java.util.Map<net.minecraft.resources.ResourceLocation,
                 com.mobspawncontroller.natural.NaturalSpawnSettings> settings) {
+        }
+
+        default void onActiveSpawnSettingsReceived(java.util.Map<net.minecraft.resources.ResourceLocation,
+                com.mobspawncontroller.active.ActiveSpawnSettings> settings) {
         }
 
         default void onStructuresReceived(List<String> entries, List<String> tags) {
