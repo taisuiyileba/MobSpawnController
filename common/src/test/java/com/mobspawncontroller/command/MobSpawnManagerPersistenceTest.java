@@ -95,7 +95,7 @@ class MobSpawnManagerPersistenceTest {
 
     private static NaturalSpawnSettings settings() {
         return new NaturalSpawnSettings(
-                0.5,
+                0.5, 2.5,
                 10, 90,
                 null, null,
                 13000, 23000,

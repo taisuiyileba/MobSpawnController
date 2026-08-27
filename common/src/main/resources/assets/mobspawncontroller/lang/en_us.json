@@ -124,6 +124,8 @@
   "gui.mobspawncontroller.natural.range.max": "Max",
   "gui.mobspawncontroller.natural.spawn_type_list": "Applicable spawn types",
   "gui.mobspawncontroller.natural.spawn_type_list.hint": "Adds conditions to vanilla spawns of the selected types; does not create extra spawns",
+  "gui.mobspawncontroller.natural.spawn_multiplier": "Vanilla spawn multiplier",
+  "gui.mobspawncontroller.natural.spawn_multiplier.hint": "Raises this mob's vanilla selection weight and its category cap; vanilla is 1, range 1 to 16",
   "gui.mobspawncontroller.natural.chance": "Spawn chance (%)",
   "gui.mobspawncontroller.natural.chance.hint": "Pass rate for each applicable spawn attempt",
   "gui.mobspawncontroller.natural.min_players": "Minimum players in dimension",

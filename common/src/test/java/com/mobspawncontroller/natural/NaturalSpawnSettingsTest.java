@@ -61,7 +61,7 @@ class NaturalSpawnSettingsTest {
     void constructorNormalizesLegacySeasonsAndUnsafeBounds() {
         NaturalSpawnSettings defaults = NaturalSpawnSettings.defaults();
         NaturalSpawnSettings normalized = new NaturalSpawnSettings(
-                2.0,
+                2.0, 99.0,
                 defaults.minHeight(), defaults.maxHeight(),
                 -4, 50,
                 defaults.minTime(), defaults.maxTime(),
@@ -78,6 +78,7 @@ class NaturalSpawnSettingsTest {
                 null, null);
 
         assertEquals(1.0, normalized.chance());
+        assertEquals(16.0, normalized.spawnMultiplier());
         assertEquals(0, normalized.minTotalLight());
         assertEquals(15, normalized.maxTotalLight());
         assertEquals(0, normalized.minDay());
@@ -96,7 +97,7 @@ class NaturalSpawnSettingsTest {
 
     private static NaturalSpawnSettings comprehensiveSettings() {
         return new NaturalSpawnSettings(
-                0.375,
+                0.375, 3.5,
                 -32, 180,
                 1, 12,
                 18000, 6000,
