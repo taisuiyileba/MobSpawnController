@@ -124,6 +124,8 @@
   "gui.mobspawncontroller.natural.range.max": "最高",
   "gui.mobspawncontroller.natural.spawn_type_list": "条件适用生成类型",
   "gui.mobspawncontroller.natural.spawn_type_list.hint": "对所选类型的原版生成添加条件；不会额外生成生物",
+  "gui.mobspawncontroller.natural.spawn_multiplier": "原版生成倍率",
+  "gui.mobspawncontroller.natural.spawn_multiplier.hint": "提高该生物的原版选中权重及所属类别数量上限；1 为原版，范围 1～16",
   "gui.mobspawncontroller.natural.chance": "生成概率（%）",
   "gui.mobspawncontroller.natural.chance.hint": "每次适用类型生成尝试的通过率",
   "gui.mobspawncontroller.natural.min_players": "维度最少玩家数",

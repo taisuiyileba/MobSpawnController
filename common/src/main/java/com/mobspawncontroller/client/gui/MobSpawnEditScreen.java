@@ -97,6 +97,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
 
     private static final List<NaturalField> NATURAL_FIELDS = List.of(
             new NaturalField("spawn_type_list", NaturalFieldType.PICKER),
+            new NaturalField("spawn_multiplier", NaturalFieldType.NUMBER),
             new NaturalField("chance", NaturalFieldType.NUMBER),
             new NaturalField("players_range", NaturalFieldType.RANGE),
             new NaturalField("max_nearby", NaturalFieldType.NUMBER),
@@ -125,6 +126,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             new NaturalField("block_above_list", NaturalFieldType.PICKER)
     );
     private static final Map<String, NaturalNumberRule> NATURAL_NUMBER_RULES = Map.ofEntries(
+            Map.entry("spawn_multiplier", decimalRule(1.0, 16.0)),
             Map.entry("chance", decimalRule(0.0, 100.0)),
             Map.entry("min_players", integerRule(0, Integer.MAX_VALUE)),
             Map.entry("max_players", integerRule(0, Integer.MAX_VALUE)),
@@ -395,6 +397,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         naturalSelections.clear();
         loadSelector("spawn_type_list", spawnTypeStrings(settings.spawnTypes()),
                 spawnTypeStrings(settings.excludedSpawnTypes()));
+        naturalInputs.put("spawn_multiplier", formatNaturalNumber(settings.spawnMultiplier()));
         naturalInputs.put("chance", formatNaturalNumber(settings.chance() * 100.0));
         putNatural("min_height", settings.minHeight());
         putNatural("max_height", settings.maxHeight());
@@ -518,6 +521,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
     private NaturalSpawnSettings collectNaturalSettings() {
         return new NaturalSpawnSettings(
                 parseNaturalDouble("chance", 100.0) / 100.0,
+                parseNaturalDouble("spawn_multiplier", 1.0),
                 parseNaturalInteger("min_height"), parseNaturalInteger("max_height"),
                 parseNaturalInteger("min_total_light"), parseNaturalInteger("max_total_light"),
                 parseNaturalInteger("min_time"), parseNaturalInteger("max_time"),

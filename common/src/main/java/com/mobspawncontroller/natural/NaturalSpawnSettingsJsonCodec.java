@@ -19,6 +19,9 @@ public final class NaturalSpawnSettingsJsonCodec {
     public static JsonObject encode(NaturalSpawnSettings settings) {
         JsonObject json = new JsonObject();
         if (settings.chance() != 1.0) json.addProperty("chance", settings.chance());
+        if (settings.spawnMultiplier() != 1.0) {
+            json.addProperty("spawn_multiplier", settings.spawnMultiplier());
+        }
         addNullable(json, "min_height", settings.minHeight());
         addNullable(json, "max_height", settings.maxHeight());
         addNullable(json, "min_total_light", settings.minTotalLight());
@@ -73,6 +76,7 @@ public final class NaturalSpawnSettingsJsonCodec {
 
     public static NaturalSpawnSettings decode(JsonObject json) {
         return new NaturalSpawnSettings(getDouble(json, "chance", 1.0),
+                getDouble(json, "spawn_multiplier", 1.0),
                 getInteger(json, "min_height"), getInteger(json, "max_height"),
                 getInteger(json, "min_total_light"), getInteger(json, "max_total_light"),
                 getInteger(json, "min_time"), getInteger(json, "max_time"),

@@ -14,6 +14,7 @@ import java.util.Locale;
  */
 public record NaturalSpawnSettings(
         double chance,
+        double spawnMultiplier,
         Integer minHeight,
         Integer maxHeight,
         Integer minTotalLight,
@@ -65,6 +66,7 @@ public record NaturalSpawnSettings(
 
     public NaturalSpawnSettings {
         chance = clamp(chance, 0.0, 1.0);
+        spawnMultiplier = Double.isFinite(spawnMultiplier) ? clamp(spawnMultiplier, 1.0, 16.0) : 1.0;
         minTotalLight = clampNullable(minTotalLight, 0, 15);
         maxTotalLight = clampNullable(maxTotalLight, 0, 15);
         minTime = clampNullable(minTime, 0, 23999);
@@ -113,7 +115,7 @@ public record NaturalSpawnSettings(
     }
 
     public static NaturalSpawnSettings defaults() {
-        return new NaturalSpawnSettings(1.0,
+        return new NaturalSpawnSettings(1.0, 1.0,
                 null, null, null, null,
                 null, null, null, null, List.of(), List.of(),
                 null, null, null, null, null, null,
@@ -140,6 +142,7 @@ public record NaturalSpawnSettings(
 
     public void write(FriendlyByteBuf buf) {
         buf.writeDouble(chance);
+        buf.writeDouble(spawnMultiplier);
         writeNullableInt(buf, minHeight);
         writeNullableInt(buf, maxHeight);
         writeNullableInt(buf, minTotalLight);
@@ -190,7 +193,7 @@ public record NaturalSpawnSettings(
     }
 
     public static NaturalSpawnSettings read(FriendlyByteBuf buf) {
-        return new NaturalSpawnSettings(buf.readDouble(),
+        return new NaturalSpawnSettings(buf.readDouble(), buf.readDouble(),
                 readNullableInt(buf), readNullableInt(buf),
                 readNullableInt(buf), readNullableInt(buf),
                 readNullableInt(buf), readNullableInt(buf),

@@ -47,7 +47,7 @@ import java.util.function.Supplier;
 @Mod(MobSpawnController.MOD_ID)
 public final class MobSpawnControllerForge {
 
-    private static final String PROTOCOL_VERSION = "9";
+    private static final String PROTOCOL_VERSION = "10";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             MobSpawnController.id("main"),
             () -> PROTOCOL_VERSION,

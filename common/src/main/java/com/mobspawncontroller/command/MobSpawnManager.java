@@ -10,6 +10,7 @@ import com.mobspawncontroller.active.ActiveSpawnSettingsJsonCodec;
 import com.mobspawncontroller.compat.SereneSeasonsCompat;
 import com.mobspawncontroller.natural.NaturalSpawnSettings;
 import com.mobspawncontroller.natural.NaturalSpawnSettingsJsonCodec;
+import com.mobspawncontroller.natural.NaturalSpawnBoost;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
@@ -126,6 +127,7 @@ public final class MobSpawnManager {
         } else {
             NATURAL_SPAWN_SETTINGS.put(mobId, settings);
         }
+        NaturalSpawnBoost.invalidate();
     }
 
     public static ActiveSpawnSettings getActiveSpawnSettings(ResourceLocation mobId) {
@@ -188,6 +190,7 @@ public final class MobSpawnManager {
         ATTRIBUTE_OVERRIDES.remove(mobId);
         NATURAL_SPAWN_SETTINGS.remove(mobId);
         ACTIVE_SPAWN_SETTINGS.remove(mobId);
+        NaturalSpawnBoost.invalidate();
     }
 
     public static void clearAll() {
@@ -195,6 +198,7 @@ public final class MobSpawnManager {
         ATTRIBUTE_OVERRIDES.clear();
         NATURAL_SPAWN_SETTINGS.clear();
         ACTIVE_SPAWN_SETTINGS.clear();
+        NaturalSpawnBoost.invalidate();
     }
 
     public static void save() {
@@ -263,6 +267,7 @@ public final class MobSpawnManager {
         ATTRIBUTE_OVERRIDES.clear();
         NATURAL_SPAWN_SETTINGS.clear();
         ACTIVE_SPAWN_SETTINGS.clear();
+        NaturalSpawnBoost.invalidate();
         if (savePath == null || !Files.exists(savePath)) {
             return;
         }

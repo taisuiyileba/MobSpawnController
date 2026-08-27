@@ -50,6 +50,7 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
     private static final int RULES_ACCENT_COLOR = 0xFFFFAA00;
     private static final int NATURAL_ACCENT_COLOR = 0xFF34D399;
     private static final int ACTIVE_ACCENT_COLOR = 0xFFC084FC;
+    private static String savedSearchText = "";
 
     private EditBox searchBox;
     private boolean modDropdownOpen = false;
@@ -119,7 +120,11 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
         int searchY = panelTop + 21;
         searchBox = new EditBox(this.font, listLeft, searchY, searchWidth, 18, Component.empty());
         searchBox.setMaxLength(128);
-        searchBox.setResponder(text -> applyFilter());
+        searchBox.setValue(savedSearchText);
+        searchBox.setResponder(text -> {
+            savedSearchText = text;
+            applyFilter();
+        });
         this.addRenderableWidget(searchBox);
 
         this.addRenderableWidget(Button.builder(Component.literal("\uD83D\uDD0D"), button -> {
