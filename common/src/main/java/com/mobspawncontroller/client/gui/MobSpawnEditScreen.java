@@ -23,6 +23,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobSpawnType;
 import org.lwjgl.glfw.GLFW;
@@ -937,6 +938,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
 
         guiGraphics.fill(panelLeft + PANEL_INSET, listBottom, panelRight - PANEL_INSET, listBottom + 1, 0xFF303742);
         renderFooter(guiGraphics, mouseX, mouseY, partialTick);
+        renderHoveredConfigurationTooltip(guiGraphics, mouseX, mouseY);
     }
 
     private void renderPanel(GuiGraphics guiGraphics) {
@@ -1429,6 +1431,83 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
                 x + 10, boxTop + 12, 0xFFE5E7EB);
         guiGraphics.drawString(this.font, Component.translatable("gui.mobspawncontroller.attributes.empty_detail"),
                 x + 10, boxTop + 30, 0xFF94A3B8);
+    }
+
+    private void renderHoveredConfigurationTooltip(GuiGraphics guiGraphics, int mouseX, int mouseY) {
+        if (mouseX < panelLeft + PANEL_INSET || mouseX >= panelRight - PANEL_INSET
+                || mouseY < listTop || mouseY >= listBottom) {
+            return;
+        }
+
+        List<Component> lines = new ArrayList<>();
+        if (activeTab == DetailTab.SPAWN_RULES) {
+            int index = hoveredRowIndex(mouseY, ROW_HEIGHT, spawnTypes.length);
+            if (index < 0) return;
+            MobSpawnType spawnType = spawnTypes[index];
+            String typeName = spawnType.name().toLowerCase(Locale.ROOT);
+            lines.add(Component.translatable("gui.mobspawncontroller.spawntype." + typeName)
+                    .withStyle(ChatFormatting.AQUA));
+            lines.add(Component.translatable("gui.mobspawncontroller.tooltip.spawn_rule")
+                    .withStyle(ChatFormatting.GRAY));
+            Component state = Component.translatable(editRules.getOrDefault(spawnType, true)
+                    ? "gui.mobspawncontroller.filter.enabled"
+                    : "gui.mobspawncontroller.filter.disabled");
+            lines.add(Component.translatable("gui.mobspawncontroller.tooltip.current", state)
+                    .withStyle(ChatFormatting.DARK_GRAY));
+        } else if (activeTab == DetailTab.NATURAL_SPAWN) {
+            int index = hoveredRowIndex(mouseY, NATURAL_ROW_HEIGHT, naturalFields.size());
+            if (index < 0) return;
+            addFieldTooltip(lines, "gui.mobspawncontroller.natural." + naturalFields.get(index).key());
+        } else if (activeTab == DetailTab.ACTIVE_SPAWN) {
+            int index = hoveredRowIndex(mouseY, NATURAL_ROW_HEIGHT, activeFields.size());
+            if (index < 0) return;
+            addFieldTooltip(lines, "gui.mobspawncontroller.active." + activeFields.get(index).key());
+        } else {
+            int index = hoveredRowIndex(mouseY, ATTRIBUTE_ROW_HEIGHT, attributeControls.size());
+            if (index < 0) return;
+            MobAttributeControl control = attributeControls.get(index);
+            lines.add(Component.translatable(control.descriptionKey()).withStyle(ChatFormatting.AQUA));
+            lines.add(Component.translatable("gui.mobspawncontroller.attributes.tooltip.id", control.id())
+                    .withStyle(ChatFormatting.GRAY));
+            lines.add(Component.translatable("gui.mobspawncontroller.attributes.tooltip.source", control.source())
+                    .withStyle(ChatFormatting.GRAY));
+            lines.add(Component.translatable("gui.mobspawncontroller.attributes.tooltip.values",
+                            formatInputValue(control.value(), control.type()),
+                            formatInputValue(control.defaultValue(), control.type()))
+                    .withStyle(ChatFormatting.GRAY));
+            if (control.type() != MobAttributeControl.ControlType.BOOLEAN) {
+                lines.add(Component.translatable("gui.mobspawncontroller.attributes.tooltip.range",
+                                formatInputValue(control.minValue(), control.type()),
+                                formatInputValue(control.maxValue(), control.type()))
+                        .withStyle(ChatFormatting.DARK_GRAY));
+            }
+            lines.add(Component.translatable(control.overridden()
+                            ? "gui.mobspawncontroller.attributes.tooltip.overridden"
+                            : "gui.mobspawncontroller.attributes.tooltip.default")
+                    .withStyle(ChatFormatting.DARK_GRAY));
+        }
+
+        int tooltipWidth = Math.max(120, Math.min(300, this.width - 24));
+        List<FormattedCharSequence> wrapped = new ArrayList<>();
+        for (Component line : lines) {
+            wrapped.addAll(this.font.split(line, tooltipWidth));
+        }
+        guiGraphics.renderTooltip(this.font, wrapped, mouseX, mouseY);
+    }
+
+    private int hoveredRowIndex(int mouseY, int rowHeight, int rowCount) {
+        int firstRowY = listTop - (int) scrollOffset;
+        int index = (mouseY - firstRowY) / rowHeight;
+        if (mouseY < firstRowY || index < 0 || index >= rowCount) {
+            return -1;
+        }
+        int rowY = firstRowY + index * rowHeight;
+        return mouseY < rowY + rowHeight ? index : -1;
+    }
+
+    private static void addFieldTooltip(List<Component> lines, String baseKey) {
+        lines.add(Component.translatable(baseKey).withStyle(ChatFormatting.AQUA));
+        lines.add(Component.translatable(baseKey + ".hint").withStyle(ChatFormatting.GRAY));
     }
 
     private void renderAttributeControl(GuiGraphics guiGraphics, MobAttributeControl control, int rowY) {

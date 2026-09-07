@@ -50,12 +50,17 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
     private static final int RULES_ACCENT_COLOR = 0xFFFFAA00;
     private static final int NATURAL_ACCENT_COLOR = 0xFF34D399;
     private static final int ACTIVE_ACCENT_COLOR = 0xFFC084FC;
+    private static final int DROPDOWN_ITEM_HEIGHT = 14;
+    private static final int DROPDOWN_MAX_VISIBLE_ITEMS = 18;
     private static String savedSearchText = "";
 
     private EditBox searchBox;
     private boolean modDropdownOpen = false;
     private boolean statusDropdownOpen = false;
     private boolean attributeDropdownOpen = false;
+    private int modDropdownScrollOffset = 0;
+    private int statusDropdownScrollOffset = 0;
+    private int attributeDropdownScrollOffset = 0;
     private String selectedMod = "gui.mobspawncontroller.filter.all_mods";
     private String selectedStatus = "gui.mobspawncontroller.filter.all_status";
     private String selectedAttributeStatus = "gui.mobspawncontroller.filter.all_attributes";
@@ -315,11 +320,11 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
         guiGraphics.pose().pushPose();
         guiGraphics.pose().translate(0, 0, 400);
         renderDropdown(guiGraphics, mouseX, mouseY, modDropdownX, dropdownY, modDropdownWidth, dropdownHeight,
-                selectedMod, modDropdownOpen, availableMods);
+                selectedMod, modDropdownOpen, availableMods, DropdownKind.MOD);
         renderDropdown(guiGraphics, mouseX, mouseY, statusDropdownX, dropdownY, statusDropdownWidth, dropdownHeight,
-                selectedStatus, statusDropdownOpen, statusOptions);
+                selectedStatus, statusDropdownOpen, statusOptions, DropdownKind.STATUS);
         renderDropdown(guiGraphics, mouseX, mouseY, attributeDropdownX, dropdownY, attributeDropdownWidth, dropdownHeight,
-                selectedAttributeStatus, attributeDropdownOpen, attributeStatusOptions);
+                selectedAttributeStatus, attributeDropdownOpen, attributeStatusOptions, DropdownKind.ATTRIBUTE);
         guiGraphics.pose().popPose();
     }
 
@@ -416,7 +421,7 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
     }
 
     private void renderDropdown(GuiGraphics guiGraphics, int mouseX, int mouseY, int x, int y, int width, int height,
-                                String selected, boolean open, List<String> options) {
+                                String selected, boolean open, List<String> options, DropdownKind kind) {
         boolean hovered = mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
         guiGraphics.fill(x, y, x + width, y + height, 0xFF111827);
         guiGraphics.renderOutline(x, y, width, height, open ? ACCENT_COLOR : hovered ? 0xFF7DD3FC : 0xFF4B5563);
@@ -433,24 +438,48 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
             return;
         }
 
-        int listH = Math.min(options.size() * 14, selected.equals(selectedMod) ? 140 : options.size() * 14);
+        int visibleCount = getDropdownVisibleCount(y, height, options.size());
+        int scrollOffset = clampDropdownScrollOffset(kind, options.size(), visibleCount);
+        int listH = visibleCount * DROPDOWN_ITEM_HEIGHT;
         guiGraphics.fill(x, y + height, x + width, y + height + listH, 0xEE111827);
         guiGraphics.renderOutline(x, y + height, width, listH, 0xFF4B5563);
-        for (int i = 0; i < options.size(); i++) {
-            int itemY = y + height + i * 14;
-            if (itemY + 14 > y + height + listH) {
-                break;
-            }
-            boolean itemHovered = mouseX >= x && mouseX < x + width && mouseY >= itemY && mouseY < itemY + 14;
+        boolean scrollable = options.size() > visibleCount;
+        int itemTextWidth = maxTextWidth - (scrollable ? 4 : 0);
+        for (int slot = 0; slot < visibleCount; slot++) {
+            int optionIndex = scrollOffset + slot;
+            if (optionIndex >= options.size()) break;
+            int itemY = y + height + slot * DROPDOWN_ITEM_HEIGHT;
+            boolean itemHovered = mouseX >= x && mouseX < x + width
+                    && mouseY >= itemY && mouseY < itemY + DROPDOWN_ITEM_HEIGHT;
             if (itemHovered) {
-                guiGraphics.fill(x + 1, itemY, x + width - 1, itemY + 14, 0xFF444444);
+                guiGraphics.fill(x + 1, itemY, x + width - 1, itemY + DROPDOWN_ITEM_HEIGHT, 0xFF444444);
             }
-            String itemText = optionText(options.get(i));
-            if (this.font.width(itemText) > maxTextWidth) {
-                itemText = this.font.plainSubstrByWidth(itemText, maxTextWidth - this.font.width("...")) + "...";
+            String itemText = optionText(options.get(optionIndex));
+            if (this.font.width(itemText) > itemTextWidth) {
+                itemText = this.font.plainSubstrByWidth(itemText,
+                        Math.max(0, itemTextWidth - this.font.width("..."))) + "...";
             }
             guiGraphics.drawString(this.font, itemText, x + 4, itemY + 3, itemHovered ? 0xFFFFFFFF : 0xFFB6C2D0);
         }
+
+        if (scrollable) {
+            int trackX = x + width - 4;
+            int trackY = y + height + 1;
+            int trackHeight = Math.max(1, listH - 2);
+            int thumbHeight = Math.max(8, trackHeight * visibleCount / options.size());
+            int maxOffset = options.size() - visibleCount;
+            int thumbY = trackY + (maxOffset > 0
+                    ? (trackHeight - thumbHeight) * scrollOffset / maxOffset : 0);
+            guiGraphics.fill(trackX, trackY, trackX + 2, trackY + trackHeight, 0x55374151);
+            guiGraphics.fill(trackX, thumbY, trackX + 2, thumbY + thumbHeight, 0xCC7DD3FC);
+        }
+    }
+
+    private int getDropdownVisibleCount(int y, int height, int optionCount) {
+        if (optionCount <= 0) return 0;
+        int availableBelow = Math.max(DROPDOWN_ITEM_HEIGHT, this.height - (y + height) - 4);
+        int screenCapacity = Math.max(1, availableBelow / DROPDOWN_ITEM_HEIGHT);
+        return Math.min(optionCount, Math.min(DROPDOWN_MAX_VISIBLE_ITEMS, screenCapacity));
     }
 
     private static String optionText(String raw) {
@@ -601,9 +630,11 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
                                         List<String> options, DropdownKind kind) {
         boolean open = isDropdownOpen(kind);
         if (open) {
-            int listH = Math.min(options.size() * 14, kind == DropdownKind.MOD ? 140 : options.size() * 14);
+            int visibleCount = getDropdownVisibleCount(y, height, options.size());
+            int scrollOffset = clampDropdownScrollOffset(kind, options.size(), visibleCount);
+            int listH = visibleCount * DROPDOWN_ITEM_HEIGHT;
             if (mouseX >= x && mouseX < x + width && mouseY >= y + height && mouseY < y + height + listH) {
-                int index = (int) ((mouseY - (y + height)) / 14);
+                int index = scrollOffset + (int) ((mouseY - (y + height)) / DROPDOWN_ITEM_HEIGHT);
                 if (index >= 0 && index < options.size()) {
                     setSelectedDropdown(kind, options.get(index));
                     setDropdownOpen(kind, false);
@@ -619,6 +650,7 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
             modDropdownOpen = kind == DropdownKind.MOD;
             statusDropdownOpen = kind == DropdownKind.STATUS;
             attributeDropdownOpen = kind == DropdownKind.ATTRIBUTE;
+            revealSelectedDropdownOption(kind, options, y, height);
             return true;
         }
         return false;
@@ -648,6 +680,44 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
         }
     }
 
+    private void revealSelectedDropdownOption(DropdownKind kind, List<String> options, int y, int height) {
+        int selectedIndex = options.indexOf(switch (kind) {
+            case MOD -> selectedMod;
+            case STATUS -> selectedStatus;
+            case ATTRIBUTE -> selectedAttributeStatus;
+        });
+        int visibleCount = getDropdownVisibleCount(y, height, options.size());
+        int offset = clampDropdownScrollOffset(kind, options.size(), visibleCount);
+        if (selectedIndex >= 0 && selectedIndex < offset) {
+            setDropdownScrollOffset(kind, selectedIndex);
+        } else if (selectedIndex >= offset + visibleCount) {
+            setDropdownScrollOffset(kind, selectedIndex - visibleCount + 1);
+        }
+    }
+
+    private int clampDropdownScrollOffset(DropdownKind kind, int optionCount, int visibleCount) {
+        int maxOffset = Math.max(0, optionCount - visibleCount);
+        int clamped = Math.max(0, Math.min(getDropdownScrollOffset(kind), maxOffset));
+        setDropdownScrollOffset(kind, clamped);
+        return clamped;
+    }
+
+    private int getDropdownScrollOffset(DropdownKind kind) {
+        return switch (kind) {
+            case MOD -> modDropdownScrollOffset;
+            case STATUS -> statusDropdownScrollOffset;
+            case ATTRIBUTE -> attributeDropdownScrollOffset;
+        };
+    }
+
+    private void setDropdownScrollOffset(DropdownKind kind, int offset) {
+        switch (kind) {
+            case MOD -> modDropdownScrollOffset = offset;
+            case STATUS -> statusDropdownScrollOffset = offset;
+            case ATTRIBUTE -> attributeDropdownScrollOffset = offset;
+        }
+    }
+
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (draggingScrollbar) {
@@ -674,11 +744,46 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollY) {
+        int panelWidth = panelRight - panelLeft;
+        int searchWidth = panelWidth - PANEL_INSET * 2 - 96;
+        int totalDropdownWidth = searchWidth + 92;
+        int modDropdownWidth = Math.max(86, totalDropdownWidth / 4);
+        int statusDropdownWidth = Math.max(104, totalDropdownWidth / 3);
+        int attributeDropdownWidth = totalDropdownWidth - modDropdownWidth - statusDropdownWidth - 8;
+        int dropdownY = panelTop + 50;
+        int dropdownHeight = 18;
+        if (scrollOpenDropdown(mouseX, mouseY, scrollY, listLeft, dropdownY, modDropdownWidth,
+                dropdownHeight, availableMods, DropdownKind.MOD)
+                || scrollOpenDropdown(mouseX, mouseY, scrollY, listLeft + modDropdownWidth + 4, dropdownY,
+                statusDropdownWidth, dropdownHeight, statusOptions, DropdownKind.STATUS)
+                || scrollOpenDropdown(mouseX, mouseY, scrollY,
+                listLeft + modDropdownWidth + statusDropdownWidth + 8, dropdownY,
+                attributeDropdownWidth, dropdownHeight, attributeStatusOptions, DropdownKind.ATTRIBUTE)) {
+            return true;
+        }
         if (mouseX >= listLeft && mouseX <= listRight && mouseY >= listTop && mouseY <= listBottom) {
             scrollOffset = Math.max(0, Math.min(scrollOffset - scrollY * 20, getMaxScroll()));
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, scrollY);
+    }
+
+    private boolean scrollOpenDropdown(double mouseX, double mouseY, double scrollY, int x, int y, int width,
+                                       int height, List<String> options, DropdownKind kind) {
+        if (!isDropdownOpen(kind)) return false;
+        int visibleCount = getDropdownVisibleCount(y, height, options.size());
+        int listHeight = visibleCount * DROPDOWN_ITEM_HEIGHT;
+        if (mouseX < x || mouseX >= x + width || mouseY < y || mouseY >= y + height + listHeight) {
+            return false;
+        }
+        if (options.size() <= visibleCount || scrollY == 0.0) {
+            return true;
+        }
+        int current = clampDropdownScrollOffset(kind, options.size(), visibleCount);
+        int direction = scrollY > 0.0 ? -1 : 1;
+        setDropdownScrollOffset(kind, Math.max(0,
+                Math.min(current + direction, options.size() - visibleCount)));
+        return true;
     }
 
     @Override
