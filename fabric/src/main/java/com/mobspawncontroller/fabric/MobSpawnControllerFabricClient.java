@@ -3,13 +3,16 @@ package com.mobspawncontroller.fabric;
 import com.mobspawncontroller.client.ClientRuleSync;
 import com.mobspawncontroller.client.gui.MobSpawnControllerScreen;
 import com.mobspawncontroller.network.ClientboundSyncAttributesPayload;
+import com.mobspawncontroller.network.ClientboundSyncLoadoutPayload;
 import com.mobspawncontroller.network.ClientboundSyncRulesPayload;
 import com.mobspawncontroller.network.ClientboundSyncStructuresPayload;
 import com.mobspawncontroller.network.ServerboundRequestAttributesPayload;
+import com.mobspawncontroller.network.ServerboundRequestLoadoutPayload;
 import com.mobspawncontroller.network.ServerboundRequestRulesPayload;
 import com.mobspawncontroller.network.ServerboundRequestStructuresPayload;
 import com.mobspawncontroller.network.ServerboundSetAttributesPayload;
 import com.mobspawncontroller.network.ServerboundSetActiveSpawnPayload;
+import com.mobspawncontroller.network.ServerboundSetLoadoutPayload;
 import com.mobspawncontroller.network.ServerboundSetNaturalSpawnPayload;
 import com.mobspawncontroller.network.ServerboundToggleSpawnPayload;
 import com.mobspawncontroller.platform.NetworkBridge;
@@ -53,6 +56,11 @@ public final class MobSpawnControllerFabricClient implements ClientModInitialize
                     ClientboundSyncStructuresPayload payload = ClientboundSyncStructuresPayload.read(buf);
                     client.execute(() -> ClientRuleSync.handle(payload));
                 });
+        ClientPlayNetworking.registerGlobalReceiver(ClientboundSyncLoadoutPayload.ID,
+                (client, handler, buf, responseSender) -> {
+                    ClientboundSyncLoadoutPayload payload = ClientboundSyncLoadoutPayload.read(buf);
+                    client.execute(() -> ClientRuleSync.handle(payload));
+                });
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (OPEN_GUI_KEY.consumeClick()) {
@@ -87,6 +95,12 @@ public final class MobSpawnControllerFabricClient implements ClientModInitialize
         } else if (payload instanceof ServerboundRequestStructuresPayload requestStructures) {
             ServerboundRequestStructuresPayload.write(requestStructures, buf);
             ClientPlayNetworking.send(ServerboundRequestStructuresPayload.ID, buf);
+        } else if (payload instanceof ServerboundRequestLoadoutPayload requestLoadout) {
+            ServerboundRequestLoadoutPayload.write(requestLoadout, buf);
+            ClientPlayNetworking.send(ServerboundRequestLoadoutPayload.ID, buf);
+        } else if (payload instanceof ServerboundSetLoadoutPayload setLoadout) {
+            ServerboundSetLoadoutPayload.write(setLoadout, buf);
+            ClientPlayNetworking.send(ServerboundSetLoadoutPayload.ID, buf);
         }
     }
 }

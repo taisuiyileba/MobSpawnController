@@ -5,14 +5,22 @@ import com.mobspawncontroller.active.ActiveSpawnSettings;
 import com.mobspawncontroller.attribute.MobAttributeControl;
 import com.mobspawncontroller.client.ClientRuleSync;
 import com.mobspawncontroller.compat.SereneSeasonsCompat;
+import com.mobspawncontroller.loadout.LoadoutParsing;
+import com.mobspawncontroller.loadout.LoadoutPreset;
+import com.mobspawncontroller.loadout.LoadoutSlotRule;
+import com.mobspawncontroller.loadout.MobLoadout;
 import com.mobspawncontroller.network.ServerboundRequestAttributesPayload;
+import com.mobspawncontroller.network.ServerboundRequestLoadoutPayload;
 import com.mobspawncontroller.network.ServerboundRequestStructuresPayload;
 import com.mobspawncontroller.network.ServerboundSetAttributesPayload;
 import com.mobspawncontroller.network.ServerboundSetActiveSpawnPayload;
+import com.mobspawncontroller.network.ServerboundSetLoadoutPayload;
 import com.mobspawncontroller.network.ServerboundSetNaturalSpawnPayload;
 import com.mobspawncontroller.network.ServerboundToggleSpawnPayload;
 import com.mobspawncontroller.natural.NaturalSpawnSettings;
 import com.mobspawncontroller.platform.NetworkBridge;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import io.netty.buffer.Unpooled;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -21,11 +29,14 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.MobSpawnType;
+import net.minecraft.world.item.ItemStack;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -34,6 +45,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receiver {
@@ -56,12 +68,23 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
     private static final int HEADER_BG = 0xAA202630;
     private static final int ROW_BG = 0x12FFFFFF;
     private static final int ROW_HOVER_BG = 0x3F63B3ED;
+    private static final int LOADOUT_HEADER_HEIGHT = 30;
+    private static final int LOADOUT_CARD_HEIGHT = 42;
+    private static final int LOADOUT_FOOTER_HEIGHT = 32;
+    private static final int LOADOUT_MINI_SLOT = 18;
+    private static final int LOADOUT_CHANCE_W = 56;
+    private static final int LOADOUT_EDIT_W = 34;
+    private static final int LOADOUT_DELETE_W = 16;
+    private static final int LOADOUT_ACCENT_COLOR = 0xFFF472B6;
+    // Serverbound custom payloads are capped at 32767 bytes in 1.20.1.
+    private static final int LOADOUT_PAYLOAD_LIMIT = 30000;
 
     private enum DetailTab {
         SPAWN_RULES,
         NATURAL_SPAWN,
         ACTIVE_SPAWN,
-        ATTRIBUTES
+        ATTRIBUTES,
+        LOADOUT
     }
 
     private enum NaturalFieldType {
@@ -265,6 +288,10 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
     private NaturalSpawnSettings.SkyMode naturalSky = NaturalSpawnSettings.SkyMode.ANY;
     private NaturalSpawnSettings.FluidMode naturalFluid = NaturalSpawnSettings.FluidMode.ANY;
     private NaturalSpawnSettings.SlimeChunkMode naturalSlimeChunk = NaturalSpawnSettings.SlimeChunkMode.ANY;
+    private final List<LoadoutPreset> loadoutPresets = new ArrayList<>();
+    private String loadoutChanceInput = "100";
+    private boolean loadoutChanceFocused = false;
+    private boolean loadoutLoaded = false;
 
     public MobSpawnEditScreen(MobSpawnControllerScreen parent, ResourceLocation mobId) {
         super(Component.literal(mobId.toString()));
@@ -283,6 +310,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         loadActiveSettings(parent.getActiveSpawnSettings().getOrDefault(mobId, ActiveSpawnSettings.defaults()));
         NetworkBridge.sendToServer(new ServerboundRequestAttributesPayload(mobId));
         NetworkBridge.sendToServer(new ServerboundRequestStructuresPayload());
+        NetworkBridge.sendToServer(new ServerboundRequestLoadoutPayload(mobId));
     }
 
     @Override
@@ -331,6 +359,11 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             contentHeight = activeFields.size() * NATURAL_ROW_HEIGHT;
             return;
         }
+        if (activeTab == DetailTab.LOADOUT) {
+            contentHeight = LOADOUT_HEADER_HEIGHT + loadoutPresets.size() * LOADOUT_CARD_HEIGHT
+                    + LOADOUT_FOOTER_HEIGHT;
+            return;
+        }
         contentHeight = attributeControls.isEmpty() ? 88 : attributeControls.size() * ATTRIBUTE_ROW_HEIGHT;
     }
 
@@ -343,7 +376,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             return;
         }
 
-        if (!validateNaturalInputs() || !validateActiveInputs()) {
+        if (!validateNaturalInputs() || !validateActiveInputs() || !validateLoadoutInputs()) {
             return;
         }
         NaturalSpawnSettings naturalSettings = collectNaturalSettings();
@@ -361,6 +394,15 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         }
         NetworkBridge.sendToServer(new ServerboundSetNaturalSpawnPayload(mobId, naturalSettings));
         NetworkBridge.sendToServer(new ServerboundSetActiveSpawnPayload(mobId, activeSettings));
+        if (loadoutLoaded) {
+            MobLoadout loadout = collectLoadout();
+            NetworkBridge.sendToServer(new ServerboundSetLoadoutPayload(mobId, loadout));
+            if (loadout.isDefault()) {
+                parent.getLoadoutMobIds().remove(mobId);
+            } else {
+                parent.getLoadoutMobIds().add(mobId);
+            }
+        }
 
         EnumMap<MobSpawnType, Boolean> parentMap = parent.getRules()
                 .computeIfAbsent(mobId, key -> new EnumMap<>(MobSpawnType.class));
@@ -902,6 +944,111 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         loadActiveSettings(ActiveSpawnSettings.defaults());
     }
 
+    private void resetLoadout() {
+        loadoutChanceFocused = false;
+        loadoutPresets.clear();
+        loadoutChanceInput = "100";
+        updateContentHeight();
+        scrollOffset = Math.max(0, Math.min(scrollOffset, getMaxScroll()));
+    }
+
+    private MobLoadout collectLoadout() {
+        return new MobLoadout(loadoutChanceValue(), loadoutPresets);
+    }
+
+    /** Blank or unparsable input falls back to 100%; validation reports the latter before saving. */
+    private double loadoutChanceValue() {
+        if (loadoutChanceInput.isBlank()) return 1.0;
+        try {
+            double value = Double.parseDouble(loadoutChanceInput.trim());
+            return Double.isFinite(value) ? Math.max(0.0, Math.min(100.0, value)) / 100.0 : 1.0;
+        } catch (NumberFormatException ignored) {
+            return 1.0;
+        }
+    }
+
+    private boolean validateLoadoutInputs() {
+        if (!loadoutLoaded) return true;
+        if (!loadoutChanceInput.isBlank() && !decimalRule(0.0, 100.0).accepts(loadoutChanceInput)) {
+            showValidationError("gui.mobspawncontroller.natural.error.invalid_numbers",
+                    Component.translatable("gui.mobspawncontroller.loadout.chance").getString());
+            return false;
+        }
+        for (int i = 0; i < loadoutPresets.size(); i++) {
+            LoadoutPreset preset = loadoutPresets.get(i);
+            boolean valid = preset.slots().values().stream().allMatch(rule ->
+                    rule.mode() != LoadoutSlotRule.Mode.SET || LoadoutGuiUtil.checkItem(rule.item()).valid());
+            try {
+                LoadoutParsing.parseNbt(preset.nbt());
+            } catch (CommandSyntaxException exception) {
+                valid = false;
+            }
+            if (!valid) {
+                showValidationError("gui.mobspawncontroller.loadout.error.invalid_preset", loadoutPresetLabel(i));
+                return false;
+            }
+        }
+        FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            collectLoadout().write(buf);
+            if (buf.writerIndex() > LOADOUT_PAYLOAD_LIMIT) {
+                showValidationError("gui.mobspawncontroller.loadout.error.too_large");
+                return false;
+            }
+        } finally {
+            buf.release();
+        }
+        return true;
+    }
+
+    private String loadoutPresetLabel(int index) {
+        String name = loadoutPresets.get(index).name();
+        return name.isEmpty() ? defaultLoadoutName(index + 1) : name;
+    }
+
+    private static String defaultLoadoutName(int number) {
+        return Component.translatable("gui.mobspawncontroller.loadout.default_name", number).getString();
+    }
+
+    private void openLoadoutEditor(int index, LoadoutPreset preset) {
+        Component mobName = entityType != null ? entityType.getDescription() : Component.literal(mobId.toString());
+        loadoutChanceFocused = false;
+        Minecraft.getInstance().setScreen(new LoadoutPresetEditScreen(this, entityType, mobName, preset, edited -> {
+            if (index >= 0 && index < loadoutPresets.size()) {
+                loadoutPresets.set(index, edited);
+            } else if (loadoutPresets.size() < MobLoadout.MAX_PRESETS) {
+                loadoutPresets.add(edited);
+            }
+            updateContentHeight();
+        }));
+    }
+
+    /** Empty player slots stay "keep" so the mob still receives its vanilla equipment there. */
+    private LoadoutPreset presetFromWornEquipment() {
+        EnumMap<EquipmentSlot, LoadoutSlotRule> rules = new EnumMap<>(EquipmentSlot.class);
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null) {
+            for (EquipmentSlot slot : LoadoutPreset.SLOT_ORDER) {
+                ItemStack stack = mc.player.getItemBySlot(slot);
+                String item = LoadoutParsing.toItemString(stack);
+                if (!stack.isEmpty() && item.length() <= LoadoutSlotRule.MAX_ITEM_LENGTH) {
+                    rules.put(slot, new LoadoutSlotRule(LoadoutSlotRule.Mode.SET, item, stack.getCount(),
+                            LoadoutSlotRule.DropMode.DEFAULT, 0.0F));
+                }
+            }
+        }
+        return new LoadoutPreset(defaultLoadoutName(loadoutPresets.size() + 1), 1, List.of(), List.of(),
+                null, null, rules, "");
+    }
+
+    private LoadoutPreset copyLoadoutPreset(int index) {
+        LoadoutPreset preset = loadoutPresets.get(index);
+        String name = Component.translatable("gui.mobspawncontroller.loadout.copy_name", loadoutPresetLabel(index))
+                .getString();
+        return new LoadoutPreset(name, preset.weight(), preset.sources(), preset.excludedSources(),
+                preset.minDay(), preset.maxDay(), preset.slots(), preset.nbt());
+    }
+
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         this.renderBackground(guiGraphics);
@@ -927,6 +1074,8 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             renderNaturalRows(guiGraphics, mouseX, mouseY);
         } else if (activeTab == DetailTab.ACTIVE_SPAWN) {
             renderActiveRows(guiGraphics, mouseX, mouseY);
+        } else if (activeTab == DetailTab.LOADOUT) {
+            renderLoadoutRows(guiGraphics, mouseX, mouseY);
         } else {
             renderAttributeRows(guiGraphics, mouseX, mouseY);
         }
@@ -985,13 +1134,17 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         if (!subName.isEmpty()) {
             guiGraphics.drawString(this.font, subName, textX, headerY + 13, 0xFFB6C2D0);
         }
-        Component tabLabel = switch (activeTab) {
+        guiGraphics.drawString(this.font, tabLabel(activeTab), textX, headerY + 25, 0xFF7DD3FC);
+    }
+
+    private static Component tabLabel(DetailTab tab) {
+        return switch (tab) {
             case SPAWN_RULES -> Component.translatable("gui.mobspawncontroller.tab.spawn_rules");
             case NATURAL_SPAWN -> Component.translatable("gui.mobspawncontroller.tab.natural_spawn");
             case ACTIVE_SPAWN -> Component.translatable("gui.mobspawncontroller.tab.extra_spawn");
             case ATTRIBUTES -> Component.translatable("gui.mobspawncontroller.tab.attributes");
+            case LOADOUT -> Component.translatable("gui.mobspawncontroller.tab.loadout");
         };
-        guiGraphics.drawString(this.font, tabLabel, textX, headerY + 25, 0xFF7DD3FC);
     }
 
     private void renderAllToggle(GuiGraphics guiGraphics, int mouseX, int mouseY, int headerY) {
@@ -1006,10 +1159,12 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
     private void renderHeaderResetButton(GuiGraphics guiGraphics, int mouseX, int mouseY, int headerY) {
         int x = panelRight - 14 - HEADER_RESET_W;
         int y = headerY + 7;
-        int modifiedCount = activeTab == DetailTab.NATURAL_SPAWN
-                ? (collectNaturalSettings().isDefault() ? 0 : 1)
-                : activeTab == DetailTab.ACTIVE_SPAWN
-                ? (collectActiveSettings().isDefault() ? 0 : 1) : modifiedAttributeCount();
+        int modifiedCount = switch (activeTab) {
+            case NATURAL_SPAWN -> collectNaturalSettings().isDefault() ? 0 : 1;
+            case ACTIVE_SPAWN -> collectActiveSettings().isDefault() ? 0 : 1;
+            case LOADOUT -> loadoutPresets.size();
+            default -> modifiedAttributeCount();
+        };
         boolean active = modifiedCount > 0;
         boolean hovered = mouseX >= x && mouseX < x + HEADER_RESET_W && mouseY >= y && mouseY < y + 18;
         guiGraphics.fill(x, y, x + HEADER_RESET_W, y + 18,
@@ -1024,18 +1179,19 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
                 x + HEADER_RESET_W / 2, y + (18 - font.lineHeight) / 2, active ? 0xFFFFFFFF : 0xFFE5E7EB);
     }
 
+    private int tabWidth() {
+        int count = DetailTab.values().length;
+        return (panelRight - panelLeft - PANEL_INSET * 2 - 4 * (count - 1)) / count;
+    }
+
     private void renderTabs(GuiGraphics guiGraphics, int mouseX, int mouseY) {
         int tabY = panelTop + HEADER_HEIGHT - TAB_HEIGHT - 6;
-        int tabWidth = (panelRight - panelLeft - PANEL_INSET * 2 - 12) / 4;
-        int firstTabX = panelLeft + PANEL_INSET;
-        renderTab(guiGraphics, mouseX, mouseY, firstTabX, tabY, tabWidth, DetailTab.SPAWN_RULES,
-                Component.translatable("gui.mobspawncontroller.tab.spawn_rules"));
-        renderTab(guiGraphics, mouseX, mouseY, firstTabX + tabWidth + 4, tabY, tabWidth, DetailTab.NATURAL_SPAWN,
-                Component.translatable("gui.mobspawncontroller.tab.natural_spawn"));
-        renderTab(guiGraphics, mouseX, mouseY, firstTabX + (tabWidth + 4) * 2, tabY, tabWidth, DetailTab.ACTIVE_SPAWN,
-                Component.translatable("gui.mobspawncontroller.tab.extra_spawn"));
-        renderTab(guiGraphics, mouseX, mouseY, firstTabX + (tabWidth + 4) * 3, tabY, tabWidth, DetailTab.ATTRIBUTES,
-                Component.translatable("gui.mobspawncontroller.tab.attributes"));
+        int tabWidth = tabWidth();
+        int x = panelLeft + PANEL_INSET;
+        for (DetailTab tab : DetailTab.values()) {
+            renderTab(guiGraphics, mouseX, mouseY, x, tabY, tabWidth, tab, tabLabel(tab));
+            x += tabWidth + 4;
+        }
     }
 
     private void renderTab(GuiGraphics guiGraphics, int mouseX, int mouseY, int x, int y, int width,
@@ -1046,7 +1202,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         int line = active ? ACCENT_COLOR : 0xFF374151;
         guiGraphics.fill(x, y, x + width, y + TAB_HEIGHT, bg);
         guiGraphics.fill(x, y + TAB_HEIGHT - 1, x + width, y + TAB_HEIGHT, line);
-        guiGraphics.drawCenteredString(this.font, label, x + width / 2,
+        guiGraphics.drawCenteredString(this.font, trimToWidth(label.getString(), width - 4), x + width / 2,
                 y + (TAB_HEIGHT - font.lineHeight) / 2, active ? 0xFFFFFFFF : 0xFFB6C2D0);
     }
 
@@ -1396,6 +1552,191 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
                 + value.toLowerCase(Locale.ROOT)).getString();
     }
 
+    private void renderLoadoutRows(GuiGraphics graphics, int mouseX, int mouseY) {
+        int y = listTop - (int) scrollOffset;
+        if (!loadoutLoaded) {
+            graphics.drawCenteredString(font, Component.translatable("gui.mobspawncontroller.loadout.loading"),
+                    (panelLeft + panelRight) / 2, y + 20, 0xFF94A3B8);
+            return;
+        }
+        renderLoadoutChanceRow(graphics, y, mouseX, mouseY);
+        int totalWeight = loadoutPresets.stream().mapToInt(LoadoutPreset::weight).sum();
+        double chance = loadoutChanceValue();
+        for (int i = 0; i < loadoutPresets.size(); i++) {
+            int rowY = y + LOADOUT_HEADER_HEIGHT + i * LOADOUT_CARD_HEIGHT;
+            if (rowY + LOADOUT_CARD_HEIGHT < listTop || rowY > listBottom) continue;
+            renderLoadoutCard(graphics, i, rowY, totalWeight, chance, mouseX, mouseY);
+        }
+        renderLoadoutFooter(graphics, y + LOADOUT_HEADER_HEIGHT + loadoutPresets.size() * LOADOUT_CARD_HEIGHT,
+                chance, mouseX, mouseY);
+    }
+
+    private int loadoutChanceInputX() {
+        return panelRight - PANEL_INSET - 18 - LOADOUT_CHANCE_W;
+    }
+
+    private void renderLoadoutChanceRow(GuiGraphics graphics, int rowY, int mouseX, int mouseY) {
+        int left = panelLeft + PANEL_INSET;
+        int right = panelRight - PANEL_INSET;
+        boolean rowHovered = mouseX >= left && mouseX < right && mouseY >= rowY
+                && mouseY < rowY + LOADOUT_HEADER_HEIGHT - 2;
+        graphics.fill(left, rowY, right, rowY + LOADOUT_HEADER_HEIGHT - 2, rowHovered ? ROW_HOVER_BG : ROW_BG);
+        int inputX = loadoutChanceInputX();
+        int labelWidth = inputX - panelLeft - 26;
+        graphics.drawString(font, trimToWidth(Component.translatable("gui.mobspawncontroller.loadout.chance")
+                .getString(), labelWidth), panelLeft + 16, rowY + 4, 0xFFE5E7EB);
+        graphics.drawString(font, trimToWidth(Component.translatable("gui.mobspawncontroller.loadout.chance.hint")
+                .getString(), labelWidth), panelLeft + 16, rowY + 16, 0xFF7B8794);
+
+        int inputY = rowY + 5;
+        boolean valid = loadoutChanceInput.isBlank() || decimalRule(0.0, 100.0).accepts(loadoutChanceInput);
+        boolean inputHovered = mouseX >= inputX && mouseX < inputX + LOADOUT_CHANCE_W
+                && mouseY >= inputY && mouseY < inputY + 18;
+        graphics.fill(inputX, inputY, inputX + LOADOUT_CHANCE_W, inputY + 18, 0xFF111827);
+        graphics.renderOutline(inputX, inputY, LOADOUT_CHANCE_W, 18, loadoutChanceFocused ? ACCENT_COLOR
+                : !valid ? 0xFFEF4444 : inputHovered ? 0xFF64748B : 0xFF374151);
+        String shown = loadoutChanceInput.isEmpty() ? "100" : loadoutChanceInput;
+        graphics.drawString(font, trimToWidth(shown, LOADOUT_CHANCE_W - 8), inputX + 4, inputY + 5,
+                loadoutChanceInput.isEmpty() ? 0xFF6B7280 : 0xFFE5E7EB);
+        if (loadoutChanceFocused && System.currentTimeMillis() / 500L % 2L == 0L) {
+            int cursorX = Math.min(inputX + LOADOUT_CHANCE_W - 4,
+                    inputX + 4 + font.width(trimToWidth(loadoutChanceInput, LOADOUT_CHANCE_W - 9)));
+            graphics.fill(cursorX, inputY + 4, cursorX + 1, inputY + 14, 0xFFFFFFFF);
+        }
+        graphics.drawString(font, "%", inputX + LOADOUT_CHANCE_W + 4, inputY + 5, 0xFF94A3B8);
+    }
+
+    private void renderLoadoutCard(GuiGraphics graphics, int index, int rowY, int totalWeight, double chance,
+                                   int mouseX, int mouseY) {
+        LoadoutPreset preset = loadoutPresets.get(index);
+        int left = panelLeft + PANEL_INSET;
+        int right = panelRight - PANEL_INSET;
+        int bottom = rowY + LOADOUT_CARD_HEIGHT - 2;
+        boolean hovered = mouseX >= left && mouseX < right && mouseY >= rowY && mouseY < bottom
+                && mouseY >= listTop && mouseY < listBottom;
+        graphics.fill(left, rowY, right, bottom, hovered ? ROW_HOVER_BG : (index % 2 == 0 ? ROW_BG : 0x08000000));
+        graphics.fill(left, rowY, left + 2, bottom, LOADOUT_ACCENT_COLOR);
+
+        int slotX = left + 8;
+        for (int i = 0; i < LoadoutPreset.SLOT_ORDER.size(); i++) {
+            EquipmentSlot slot = LoadoutPreset.SLOT_ORDER.get(i);
+            renderLoadoutMiniSlot(graphics, preset.slot(slot), slot, slotX + i * (LOADOUT_MINI_SLOT + 1), rowY + 4);
+        }
+        int editX = loadoutEditButtonX();
+        int nameX = slotX + LoadoutPreset.SLOT_ORDER.size() * (LOADOUT_MINI_SLOT + 1) + 6;
+        graphics.drawString(font, trimToWidth(loadoutPresetLabel(index), editX - nameX - 6), nameX, rowY + 9,
+                0xFFFFFFFF);
+        graphics.drawString(font, trimToWidth(loadoutSummary(preset, totalWeight, chance), editX - slotX - 6),
+                slotX, rowY + 27, 0xFF94A3B8);
+
+        int buttonY = rowY + 12;
+        boolean canCopy = loadoutPresets.size() < MobLoadout.MAX_PRESETS;
+        renderLoadoutButton(graphics, editX, buttonY, LOADOUT_EDIT_W,
+                Component.translatable("gui.mobspawncontroller.loadout.edit"), true, false, mouseX, mouseY);
+        renderLoadoutButton(graphics, editX + LOADOUT_EDIT_W + 4, buttonY, LOADOUT_EDIT_W,
+                Component.translatable("gui.mobspawncontroller.loadout.copy"), canCopy, false, mouseX, mouseY);
+        renderLoadoutButton(graphics, loadoutDeleteButtonX(), buttonY, LOADOUT_DELETE_W,
+                Component.literal("\u2716"), true, true, mouseX, mouseY);
+    }
+
+    private int loadoutDeleteButtonX() {
+        return panelRight - PANEL_INSET - 8 - LOADOUT_DELETE_W;
+    }
+
+    private int loadoutEditButtonX() {
+        return loadoutDeleteButtonX() - 4 - LOADOUT_EDIT_W * 2 - 4;
+    }
+
+    private void renderLoadoutMiniSlot(GuiGraphics graphics, LoadoutSlotRule rule, EquipmentSlot slot, int x, int y) {
+        graphics.fill(x, y, x + LOADOUT_MINI_SLOT, y + LOADOUT_MINI_SLOT, 0xFF111827);
+        int border = 0xFF374151;
+        switch (rule.mode()) {
+            case KEEP -> LoadoutGuiUtil.renderEmptySlotIcon(graphics, slot, x + 1, y + 1);
+            case CLEAR -> {
+                border = 0xFFB91C1C;
+                graphics.drawCenteredString(font, "\u2716", x + LOADOUT_MINI_SLOT / 2, y + 5, 0xFFFCA5A5);
+            }
+            case SET -> {
+                LoadoutGuiUtil.ItemCheck check = LoadoutGuiUtil.checkItem(rule.item());
+                if (check.valid()) {
+                    border = 0xFF15803D;
+                    ItemStack stack = check.stack().copyWithCount(rule.count());
+                    graphics.renderItem(stack, x + 1, y + 1);
+                    graphics.renderItemDecorations(font, stack, x + 1, y + 1);
+                } else {
+                    border = 0xFFEF4444;
+                    graphics.drawCenteredString(font, "?", x + LOADOUT_MINI_SLOT / 2, y + 5, 0xFFFCA5A5);
+                }
+            }
+        }
+        graphics.renderOutline(x, y, LOADOUT_MINI_SLOT, LOADOUT_MINI_SLOT, border);
+    }
+
+    private String loadoutSummary(LoadoutPreset preset, int totalWeight, double chance) {
+        List<String> parts = new ArrayList<>();
+        double share = totalWeight > 0 ? chance * preset.weight() / totalWeight * 100.0 : 0.0;
+        parts.add(Component.translatable("gui.mobspawncontroller.loadout.summary.weight", preset.weight(),
+                formatNaturalNumber(share)).getString());
+        boolean blacklist = preset.sources().isEmpty() && !preset.excludedSources().isEmpty();
+        List<String> sources = blacklist ? preset.excludedSources() : preset.sources();
+        if (sources.isEmpty()) {
+            parts.add(Component.translatable("gui.mobspawncontroller.loadout.summary.all_sources").getString());
+        } else {
+            String names = sources.stream().limit(2).map(source -> LoadoutGuiUtil.sourceName(source).getString())
+                    .collect(Collectors.joining("/"));
+            if (sources.size() > 2) names += " +" + (sources.size() - 2);
+            parts.add(Component.translatable(blacklist ? "gui.mobspawncontroller.loadout.summary.excluded"
+                    : "gui.mobspawncontroller.loadout.summary.sources", names).getString());
+        }
+        if (preset.minDay() != null || preset.maxDay() != null) {
+            parts.add(Component.translatable("gui.mobspawncontroller.loadout.summary.days",
+                    preset.minDay() == null ? "0" : preset.minDay(),
+                    preset.maxDay() == null ? "\u221E" : preset.maxDay()).getString());
+        }
+        if (!preset.nbt().isEmpty()) parts.add("NBT");
+        return String.join(" \u00B7 ", parts);
+    }
+
+    private void renderLoadoutFooter(GuiGraphics graphics, int rowY, double chance, int mouseX, int mouseY) {
+        boolean canAdd = loadoutPresets.size() < MobLoadout.MAX_PRESETS;
+        int addX = panelLeft + PANEL_INSET + 8;
+        int addWidth = loadoutAddWidth();
+        renderLoadoutButton(graphics, addX, rowY + 7, addWidth,
+                Component.translatable("gui.mobspawncontroller.loadout.add"), canAdd, false, mouseX, mouseY);
+        int wornX = addX + addWidth + 6;
+        int wornWidth = loadoutAddWornWidth();
+        renderLoadoutButton(graphics, wornX, rowY + 7, wornWidth,
+                Component.translatable("gui.mobspawncontroller.loadout.add_worn"), canAdd, false, mouseX, mouseY);
+
+        Component info = loadoutPresets.isEmpty()
+                ? Component.translatable("gui.mobspawncontroller.loadout.empty")
+                : Component.translatable("gui.mobspawncontroller.loadout.unapplied",
+                formatNaturalNumber((1.0 - chance) * 100.0));
+        int infoX = wornX + wornWidth + 8;
+        String text = trimToWidth(info.getString(), panelRight - PANEL_INSET - 8 - infoX);
+        graphics.drawString(font, text, panelRight - PANEL_INSET - 8 - font.width(text), rowY + 12, 0xFF7B8794);
+    }
+
+    private int loadoutAddWidth() {
+        return font.width(Component.translatable("gui.mobspawncontroller.loadout.add")) + 14;
+    }
+
+    private int loadoutAddWornWidth() {
+        return font.width(Component.translatable("gui.mobspawncontroller.loadout.add_worn")) + 14;
+    }
+
+    private void renderLoadoutButton(GuiGraphics graphics, int x, int y, int width, Component label, boolean enabled,
+                                     boolean danger, int mouseX, int mouseY) {
+        int height = 16;
+        boolean hovered = enabled && mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
+        int bg = !enabled ? 0xFF1F2937 : hovered ? (danger ? 0xFF7F1D1D : 0xFF2B3442) : 0xFF171C24;
+        int border = !enabled ? 0xFF374151 : hovered ? (danger ? 0xFFFCA5A5 : ACCENT_COLOR) : 0xFF4B5563;
+        graphics.fill(x, y, x + width, y + height, bg);
+        graphics.renderOutline(x, y, width, height, border);
+        graphics.drawCenteredString(font, trimToWidth(label.getString(), width - 4), x + width / 2,
+                y + (height - font.lineHeight) / 2 + 1, enabled ? 0xFFE5E7EB : 0xFF6B7280);
+    }
+
     private void renderAttributeRows(GuiGraphics guiGraphics, int mouseX, int mouseY) {
         int y = listTop - (int) scrollOffset;
         if (attributeControls.isEmpty()) {
@@ -1462,6 +1803,10 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             int index = hoveredRowIndex(mouseY, NATURAL_ROW_HEIGHT, activeFields.size());
             if (index < 0) return;
             addFieldTooltip(lines, "gui.mobspawncontroller.active." + activeFields.get(index).key());
+        } else if (activeTab == DetailTab.LOADOUT) {
+            if (renderLoadoutItemTooltip(guiGraphics, mouseX, mouseY)) return;
+            addLoadoutTooltip(lines, mouseX, mouseY);
+            if (lines.isEmpty()) return;
         } else {
             int index = hoveredRowIndex(mouseY, ATTRIBUTE_ROW_HEIGHT, attributeControls.size());
             if (index < 0) return;
@@ -1503,6 +1848,71 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         }
         int rowY = firstRowY + index * rowHeight;
         return mouseY < rowY + rowHeight ? index : -1;
+    }
+
+    /** Returns {preset index, slot index} for the mini slot under the mouse, or null. */
+    private int[] hoveredLoadoutSlot(int mouseX, int mouseY) {
+        if (!loadoutLoaded) return null;
+        int y = listTop - (int) scrollOffset;
+        int slotX = panelLeft + PANEL_INSET + 8;
+        for (int i = 0; i < loadoutPresets.size(); i++) {
+            int slotY = y + LOADOUT_HEADER_HEIGHT + i * LOADOUT_CARD_HEIGHT + 4;
+            if (mouseY < slotY || mouseY >= slotY + LOADOUT_MINI_SLOT) continue;
+            for (int s = 0; s < LoadoutPreset.SLOT_ORDER.size(); s++) {
+                int x = slotX + s * (LOADOUT_MINI_SLOT + 1);
+                if (mouseX >= x && mouseX < x + LOADOUT_MINI_SLOT) return new int[]{i, s};
+            }
+        }
+        return null;
+    }
+
+    private boolean renderLoadoutItemTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
+        int[] hovered = hoveredLoadoutSlot(mouseX, mouseY);
+        if (hovered == null) return false;
+        LoadoutSlotRule rule = loadoutPresets.get(hovered[0]).slot(LoadoutPreset.SLOT_ORDER.get(hovered[1]));
+        if (rule.mode() != LoadoutSlotRule.Mode.SET) return false;
+        LoadoutGuiUtil.ItemCheck check = LoadoutGuiUtil.checkItem(rule.item());
+        if (!check.valid()) return false;
+        graphics.renderTooltip(font, check.stack().copyWithCount(rule.count()), mouseX, mouseY);
+        return true;
+    }
+
+    private void addLoadoutTooltip(List<Component> lines, int mouseX, int mouseY) {
+        if (!loadoutLoaded) return;
+        int[] hovered = hoveredLoadoutSlot(mouseX, mouseY);
+        if (hovered != null) {
+            EquipmentSlot slot = LoadoutPreset.SLOT_ORDER.get(hovered[1]);
+            LoadoutSlotRule rule = loadoutPresets.get(hovered[0]).slot(slot);
+            lines.add(LoadoutGuiUtil.slotName(slot).copy().withStyle(ChatFormatting.AQUA));
+            lines.add(Component.translatable("gui.mobspawncontroller.loadout.editor.mode."
+                    + rule.mode().name().toLowerCase(Locale.ROOT)).withStyle(ChatFormatting.GRAY));
+            if (rule.mode() == LoadoutSlotRule.Mode.SET) {
+                lines.add(LoadoutGuiUtil.checkItem(rule.item()).error().copy().withStyle(ChatFormatting.RED));
+            }
+            return;
+        }
+        int firstRowY = listTop - (int) scrollOffset;
+        if (mouseY >= firstRowY && mouseY < firstRowY + LOADOUT_HEADER_HEIGHT) {
+            addFieldTooltip(lines, "gui.mobspawncontroller.loadout.chance");
+            return;
+        }
+        int index = (mouseY - firstRowY - LOADOUT_HEADER_HEIGHT) / LOADOUT_CARD_HEIGHT;
+        if (mouseY >= firstRowY + LOADOUT_HEADER_HEIGHT && index < loadoutPresets.size()) {
+            lines.add(Component.literal(loadoutPresetLabel(index)).withStyle(ChatFormatting.AQUA));
+            lines.add(Component.translatable("gui.mobspawncontroller.loadout.tooltip.card")
+                    .withStyle(ChatFormatting.GRAY));
+            lines.add(Component.translatable("gui.mobspawncontroller.loadout.tooltip.share")
+                    .withStyle(ChatFormatting.DARK_GRAY));
+            return;
+        }
+        int footerY = firstRowY + LOADOUT_HEADER_HEIGHT + loadoutPresets.size() * LOADOUT_CARD_HEIGHT;
+        int wornX = panelLeft + PANEL_INSET + 8 + loadoutAddWidth() + 6;
+        if (mouseY >= footerY + 7 && mouseY < footerY + 23 && mouseX >= wornX
+                && mouseX < wornX + loadoutAddWornWidth()) {
+            lines.add(Component.translatable("gui.mobspawncontroller.loadout.add_worn").withStyle(ChatFormatting.AQUA));
+            lines.add(Component.translatable("gui.mobspawncontroller.loadout.tooltip.add_worn")
+                    .withStyle(ChatFormatting.GRAY));
+        }
     }
 
     private static void addFieldTooltip(List<Component> lines, String baseKey) {
@@ -1702,6 +2112,10 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             return handleActiveClick(mouseX, mouseY);
         }
 
+        if (activeTab == DetailTab.LOADOUT) {
+            return handleLoadoutClick(mouseX, mouseY);
+        }
+
         if (activeTab != DetailTab.SPAWN_RULES) {
             return false;
         }
@@ -1832,6 +2246,60 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
             return true;
         }
         focusedActiveField = null;
+        return false;
+    }
+
+    private boolean handleLoadoutClick(double mouseX, double mouseY) {
+        loadoutChanceFocused = false;
+        if (mouseX < panelLeft || mouseX > panelRight || mouseY < listTop || mouseY > listBottom || !loadoutLoaded) {
+            return false;
+        }
+        int y = listTop - (int) scrollOffset;
+        int inputX = loadoutChanceInputX();
+        if (mouseX >= inputX && mouseX < inputX + LOADOUT_CHANCE_W && mouseY >= y + 5 && mouseY < y + 23) {
+            loadoutChanceFocused = true;
+            return true;
+        }
+
+        for (int i = 0; i < loadoutPresets.size(); i++) {
+            int rowY = y + LOADOUT_HEADER_HEIGHT + i * LOADOUT_CARD_HEIGHT;
+            if (mouseY < rowY || mouseY >= rowY + LOADOUT_CARD_HEIGHT - 2) continue;
+            int buttonY = rowY + 12;
+            boolean onButtonRow = mouseY >= buttonY && mouseY < buttonY + 16;
+            int deleteX = loadoutDeleteButtonX();
+            int copyX = loadoutEditButtonX() + LOADOUT_EDIT_W + 4;
+            if (onButtonRow && mouseX >= deleteX && mouseX < deleteX + LOADOUT_DELETE_W) {
+                loadoutPresets.remove(i);
+                updateContentHeight();
+                scrollOffset = Math.max(0, Math.min(scrollOffset, getMaxScroll()));
+                return true;
+            }
+            if (onButtonRow && mouseX >= copyX && mouseX < copyX + LOADOUT_EDIT_W) {
+                if (loadoutPresets.size() < MobLoadout.MAX_PRESETS) {
+                    loadoutPresets.add(i + 1, copyLoadoutPreset(i));
+                    updateContentHeight();
+                }
+                return true;
+            }
+            if (mouseX >= panelLeft + PANEL_INSET && mouseX < panelRight - PANEL_INSET) {
+                openLoadoutEditor(i, loadoutPresets.get(i));
+                return true;
+            }
+        }
+
+        int footerButtonY = y + LOADOUT_HEADER_HEIGHT + loadoutPresets.size() * LOADOUT_CARD_HEIGHT + 7;
+        if (loadoutPresets.size() < MobLoadout.MAX_PRESETS && mouseY >= footerButtonY && mouseY < footerButtonY + 16) {
+            int addX = panelLeft + PANEL_INSET + 8;
+            int wornX = addX + loadoutAddWidth() + 6;
+            if (mouseX >= addX && mouseX < addX + loadoutAddWidth()) {
+                openLoadoutEditor(-1, LoadoutPreset.empty(defaultLoadoutName(loadoutPresets.size() + 1)));
+                return true;
+            }
+            if (mouseX >= wornX && mouseX < wornX + loadoutAddWornWidth()) {
+                openLoadoutEditor(-1, presetFromWornEquipment());
+                return true;
+            }
+        }
         return false;
     }
 
@@ -2022,6 +2490,8 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
                 resetNaturalSettings();
             } else if (activeTab == DetailTab.ACTIVE_SPAWN) {
                 resetActiveSettings();
+            } else if (activeTab == DetailTab.LOADOUT) {
+                resetLoadout();
             } else {
                 resetAllAttributes();
             }
@@ -2032,29 +2502,17 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
 
     private boolean handleTabClick(double mouseX, double mouseY) {
         int tabY = panelTop + HEADER_HEIGHT - TAB_HEIGHT - 6;
-        int tabWidth = (panelRight - panelLeft - PANEL_INSET * 2 - 12) / 4;
-        int firstTabX = panelLeft + PANEL_INSET;
         if (mouseY < tabY || mouseY >= tabY + TAB_HEIGHT) {
             return false;
         }
-        if (mouseX >= firstTabX && mouseX < firstTabX + tabWidth) {
-            setActiveTab(DetailTab.SPAWN_RULES);
-            return true;
-        }
-        int secondTabX = firstTabX + tabWidth + 4;
-        if (mouseX >= secondTabX && mouseX < secondTabX + tabWidth) {
-            setActiveTab(DetailTab.NATURAL_SPAWN);
-            return true;
-        }
-        int thirdTabX = firstTabX + (tabWidth + 4) * 2;
-        if (mouseX >= thirdTabX && mouseX < thirdTabX + tabWidth) {
-            setActiveTab(DetailTab.ACTIVE_SPAWN);
-            return true;
-        }
-        int fourthTabX = firstTabX + (tabWidth + 4) * 3;
-        if (mouseX >= fourthTabX && mouseX < fourthTabX + tabWidth) {
-            setActiveTab(DetailTab.ATTRIBUTES);
-            return true;
+        int tabWidth = tabWidth();
+        int x = panelLeft + PANEL_INSET;
+        for (DetailTab tab : DetailTab.values()) {
+            if (mouseX >= x && mouseX < x + tabWidth) {
+                setActiveTab(tab);
+                return true;
+            }
+            x += tabWidth + 4;
         }
         return false;
     }
@@ -2067,6 +2525,7 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
         focusedAttributeId = null;
         focusedNaturalField = null;
         focusedActiveField = null;
+        loadoutChanceFocused = false;
         scrollOffset = 0;
         updateContentHeight();
     }
@@ -2118,6 +2577,22 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
     }
 
     @Override
+    public void onLoadoutMobsReceived(Set<ResourceLocation> mobIds) {
+        parent.onLoadoutMobsReceived(mobIds);
+    }
+
+    /** Only the first response is applied so a late sync never overwrites edits made in the meantime. */
+    @Override
+    public void onLoadoutReceived(ResourceLocation mobId, MobLoadout loadout) {
+        if (!this.mobId.equals(mobId) || loadoutLoaded) return;
+        loadoutPresets.clear();
+        loadoutPresets.addAll(loadout.presets());
+        loadoutChanceInput = formatNaturalNumber(loadout.chance() * 100.0);
+        loadoutLoaded = true;
+        updateContentHeight();
+    }
+
+    @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (draggingScrollbar) {
             draggingScrollbar = false;
@@ -2143,6 +2618,10 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
+        if (loadoutChanceFocused && isNumericInputChar(codePoint)) {
+            if (loadoutChanceInput.length() < 16) loadoutChanceInput += codePoint;
+            return true;
+        }
         if (focusedActiveField != null && codePoint >= 32 && codePoint != 127 && isNumericInputChar(codePoint)) {
             String value = activeInputs.getOrDefault(focusedActiveField, "");
             if (value.length() < 256) activeInputs.put(focusedActiveField, value + codePoint);
@@ -2164,6 +2643,31 @@ public class MobSpawnEditScreen extends Screen implements ClientRuleSync.Receive
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (loadoutChanceFocused) {
+            if (Screen.isPaste(keyCode)) {
+                String pasted = Minecraft.getInstance().keyboardHandler.getClipboard().chars()
+                        .mapToObj(chr -> String.valueOf((char) chr))
+                        .filter(chr -> isNumericInputChar(chr.charAt(0))).collect(Collectors.joining());
+                String value = loadoutChanceInput + pasted;
+                loadoutChanceInput = value.substring(0, Math.min(16, value.length()));
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                if (!loadoutChanceInput.isEmpty()) {
+                    loadoutChanceInput = loadoutChanceInput.substring(0, loadoutChanceInput.length() - 1);
+                }
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_DELETE) {
+                loadoutChanceInput = "";
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER
+                    || keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                loadoutChanceFocused = false;
+                return true;
+            }
+        }
         if (focusedActiveField != null) {
             String value = activeInputs.getOrDefault(focusedActiveField, "");
             if (Screen.isPaste(keyCode)) {

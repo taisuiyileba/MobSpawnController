@@ -25,8 +25,6 @@ public record ServerboundSetActiveSpawnPayload(ResourceLocation mobId, ActiveSpa
         if (player == null || !player.hasPermissions(2)) return;
         MobSpawnManager.setActiveSpawnSettings(payload.mobId, payload.settings);
         MobSpawnManager.save();
-        NetworkBridge.sendToPlayer(player, new ClientboundSyncRulesPayload(
-                MobSpawnManager.getAllRules(), MobSpawnManager.getAttributeOverrideMobs(),
-                MobSpawnManager.getAllNaturalSpawnSettings(), MobSpawnManager.getAllActiveSpawnSettings()));
+        NetworkBridge.sendToPlayer(player, ClientboundSyncRulesPayload.current());
     }
 }

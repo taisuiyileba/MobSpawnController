@@ -8,9 +8,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.MobSpawnType;
 
-import java.util.EnumMap;
 import java.util.Locale;
-import java.util.Map;
 
 public record ServerboundToggleSpawnPayload(ResourceLocation mobId, String spawnType, boolean allowed) {
 
@@ -41,9 +39,6 @@ public record ServerboundToggleSpawnPayload(ResourceLocation mobId, String spawn
         }
         MobSpawnManager.save();
 
-        Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> allRules = MobSpawnManager.getAllRules();
-        NetworkBridge.sendToPlayer(player, new ClientboundSyncRulesPayload(allRules,
-                MobSpawnManager.getAttributeOverrideMobs(), MobSpawnManager.getAllNaturalSpawnSettings(),
-                MobSpawnManager.getAllActiveSpawnSettings()));
+        NetworkBridge.sendToPlayer(player, ClientboundSyncRulesPayload.current());
     }
 }

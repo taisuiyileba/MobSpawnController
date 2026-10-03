@@ -2,6 +2,7 @@ package com.mobspawncontroller.client;
 
 import com.mobspawncontroller.network.ClientboundSyncRulesPayload;
 import com.mobspawncontroller.network.ClientboundSyncAttributesPayload;
+import com.mobspawncontroller.network.ClientboundSyncLoadoutPayload;
 import com.mobspawncontroller.network.ClientboundSyncStructuresPayload;
 import net.minecraft.client.Minecraft;
 
@@ -29,6 +30,13 @@ public final class ClientRuleSync {
             receiver.onAttributeModifiedMobsReceived(payload.attributeModifiedMobs());
             receiver.onNaturalSpawnSettingsReceived(payload.naturalSpawnSettings());
             receiver.onActiveSpawnSettingsReceived(payload.activeSpawnSettings());
+            receiver.onLoadoutMobsReceived(payload.loadoutMobs());
+        }
+    }
+
+    public static void handle(ClientboundSyncLoadoutPayload payload) {
+        if (Minecraft.getInstance().screen instanceof Receiver receiver) {
+            receiver.onLoadoutReceived(payload.mobId(), payload.loadout());
         }
     }
 
@@ -66,6 +74,13 @@ public final class ClientRuleSync {
         }
 
         default void onStructuresReceived(List<String> entries, List<String> tags) {
+        }
+
+        default void onLoadoutMobsReceived(java.util.Set<net.minecraft.resources.ResourceLocation> mobIds) {
+        }
+
+        default void onLoadoutReceived(net.minecraft.resources.ResourceLocation mobId,
+                                       com.mobspawncontroller.loadout.MobLoadout loadout) {
         }
     }
 }

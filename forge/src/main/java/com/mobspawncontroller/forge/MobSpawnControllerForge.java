@@ -6,13 +6,16 @@ import com.mobspawncontroller.client.ClientRuleSync;
 import com.mobspawncontroller.command.MobSpawnCommand;
 import com.mobspawncontroller.command.MobSpawnManager;
 import com.mobspawncontroller.network.ClientboundSyncAttributesPayload;
+import com.mobspawncontroller.network.ClientboundSyncLoadoutPayload;
 import com.mobspawncontroller.network.ClientboundSyncRulesPayload;
 import com.mobspawncontroller.network.ClientboundSyncStructuresPayload;
 import com.mobspawncontroller.network.ServerboundRequestAttributesPayload;
+import com.mobspawncontroller.network.ServerboundRequestLoadoutPayload;
 import com.mobspawncontroller.network.ServerboundRequestRulesPayload;
 import com.mobspawncontroller.network.ServerboundRequestStructuresPayload;
 import com.mobspawncontroller.network.ServerboundSetAttributesPayload;
 import com.mobspawncontroller.network.ServerboundSetActiveSpawnPayload;
+import com.mobspawncontroller.network.ServerboundSetLoadoutPayload;
 import com.mobspawncontroller.network.ServerboundSetNaturalSpawnPayload;
 import com.mobspawncontroller.network.ServerboundToggleSpawnPayload;
 import com.mobspawncontroller.natural.SpawnInterception;
@@ -47,7 +50,7 @@ import java.util.function.Supplier;
 @Mod(MobSpawnController.MOD_ID)
 public final class MobSpawnControllerForge {
 
-    private static final String PROTOCOL_VERSION = "10";
+    private static final String PROTOCOL_VERSION = "11";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             MobSpawnController.id("main"),
             () -> PROTOCOL_VERSION,
@@ -136,9 +139,29 @@ public final class MobSpawnControllerForge {
                     context.get().setPacketHandled(true);
                 })
                 .add();
-        CHANNEL.messageBuilder(ClientboundSyncStructuresPayload.class, id, NetworkDirection.PLAY_TO_CLIENT)
+        CHANNEL.messageBuilder(ClientboundSyncStructuresPayload.class, id++, NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(ClientboundSyncStructuresPayload::write)
                 .decoder(ClientboundSyncStructuresPayload::read)
+                .consumerMainThread((payload, context) -> {
+                    ClientRuleSync.handle(payload);
+                    context.get().setPacketHandled(true);
+                })
+                .add();
+        CHANNEL.messageBuilder(ServerboundRequestLoadoutPayload.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(ServerboundRequestLoadoutPayload::write)
+                .decoder(ServerboundRequestLoadoutPayload::read)
+                .consumerMainThread((payload, context) -> handleServer(payload, context,
+                        ServerboundRequestLoadoutPayload::handle))
+                .add();
+        CHANNEL.messageBuilder(ServerboundSetLoadoutPayload.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(ServerboundSetLoadoutPayload::write)
+                .decoder(ServerboundSetLoadoutPayload::read)
+                .consumerMainThread((payload, context) -> handleServer(payload, context,
+                        ServerboundSetLoadoutPayload::handle))
+                .add();
+        CHANNEL.messageBuilder(ClientboundSyncLoadoutPayload.class, id, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(ClientboundSyncLoadoutPayload::write)
+                .decoder(ClientboundSyncLoadoutPayload::read)
                 .consumerMainThread((payload, context) -> {
                     ClientRuleSync.handle(payload);
                     context.get().setPacketHandled(true);
@@ -190,7 +213,7 @@ public final class MobSpawnControllerForge {
             event.setSpawnCancelled(true);
             return;
         }
-        MobSpawnManager.applyAttributeOverrides(event.getEntity());
+        MobSpawnManager.onSpawnAccepted(event.getEntity(), event.getSpawnType(), false);
     }
 
     private void onLevelTick(TickEvent.LevelTickEvent event) {

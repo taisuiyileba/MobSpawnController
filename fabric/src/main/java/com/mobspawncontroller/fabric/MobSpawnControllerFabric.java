@@ -4,13 +4,16 @@ import com.mobspawncontroller.MobSpawnController;
 import com.mobspawncontroller.active.ActiveSpawner;
 import com.mobspawncontroller.command.MobSpawnCommand;
 import com.mobspawncontroller.network.ClientboundSyncAttributesPayload;
+import com.mobspawncontroller.network.ClientboundSyncLoadoutPayload;
 import com.mobspawncontroller.network.ClientboundSyncRulesPayload;
 import com.mobspawncontroller.network.ClientboundSyncStructuresPayload;
 import com.mobspawncontroller.network.ServerboundRequestAttributesPayload;
+import com.mobspawncontroller.network.ServerboundRequestLoadoutPayload;
 import com.mobspawncontroller.network.ServerboundRequestRulesPayload;
 import com.mobspawncontroller.network.ServerboundRequestStructuresPayload;
 import com.mobspawncontroller.network.ServerboundSetAttributesPayload;
 import com.mobspawncontroller.network.ServerboundSetActiveSpawnPayload;
+import com.mobspawncontroller.network.ServerboundSetLoadoutPayload;
 import com.mobspawncontroller.network.ServerboundSetNaturalSpawnPayload;
 import com.mobspawncontroller.network.ServerboundToggleSpawnPayload;
 import com.mobspawncontroller.platform.NetworkBridge;
@@ -79,6 +82,16 @@ public final class MobSpawnControllerFabric implements ModInitializer {
                     ServerboundRequestStructuresPayload payload = ServerboundRequestStructuresPayload.read(buf);
                     server.execute(() -> ServerboundRequestStructuresPayload.handle(payload, player));
                 });
+        ServerPlayNetworking.registerGlobalReceiver(ServerboundRequestLoadoutPayload.ID,
+                (server, player, handler, buf, responseSender) -> {
+                    ServerboundRequestLoadoutPayload payload = ServerboundRequestLoadoutPayload.read(buf);
+                    server.execute(() -> ServerboundRequestLoadoutPayload.handle(payload, player));
+                });
+        ServerPlayNetworking.registerGlobalReceiver(ServerboundSetLoadoutPayload.ID,
+                (server, player, handler, buf, responseSender) -> {
+                    ServerboundSetLoadoutPayload payload = ServerboundSetLoadoutPayload.read(buf);
+                    server.execute(() -> ServerboundSetLoadoutPayload.handle(payload, player));
+                });
     }
 
     private static void sendToPlayer(ServerPlayer player, Object payload) {
@@ -101,6 +114,12 @@ public final class MobSpawnControllerFabric implements ModInitializer {
             }
             ClientboundSyncStructuresPayload.write(structures, buf);
             ServerPlayNetworking.send(player, ClientboundSyncStructuresPayload.ID, buf);
+        } else if (payload instanceof ClientboundSyncLoadoutPayload loadout) {
+            if (!ServerPlayNetworking.canSend(player, ClientboundSyncLoadoutPayload.ID)) {
+                return;
+            }
+            ClientboundSyncLoadoutPayload.write(loadout, buf);
+            ServerPlayNetworking.send(player, ClientboundSyncLoadoutPayload.ID, buf);
         }
     }
 }

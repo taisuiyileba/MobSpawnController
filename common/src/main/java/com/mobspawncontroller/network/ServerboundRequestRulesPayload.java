@@ -1,15 +1,10 @@
 package com.mobspawncontroller.network;
 
 import com.mobspawncontroller.MobSpawnController;
-import com.mobspawncontroller.command.MobSpawnManager;
 import com.mobspawncontroller.platform.NetworkBridge;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.MobSpawnType;
-
-import java.util.EnumMap;
-import java.util.Map;
 
 public record ServerboundRequestRulesPayload() {
 
@@ -27,10 +22,6 @@ public record ServerboundRequestRulesPayload() {
             return;
         }
 
-        Map<net.minecraft.resources.ResourceLocation, EnumMap<MobSpawnType, Boolean>> allRules =
-                MobSpawnManager.getAllRules();
-        NetworkBridge.sendToPlayer(player, new ClientboundSyncRulesPayload(allRules,
-                MobSpawnManager.getAttributeOverrideMobs(), MobSpawnManager.getAllNaturalSpawnSettings(),
-                MobSpawnManager.getAllActiveSpawnSettings()));
+        NetworkBridge.sendToPlayer(player, ClientboundSyncRulesPayload.current());
     }
 }
