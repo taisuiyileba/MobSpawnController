@@ -8,6 +8,10 @@ import com.mobspawncontroller.MobSpawnController;
 import com.mobspawncontroller.active.ActiveSpawnSettings;
 import com.mobspawncontroller.active.ActiveSpawnSettingsJsonCodec;
 import com.mobspawncontroller.compat.SereneSeasonsCompat;
+import com.mobspawncontroller.loadout.LoadoutApplier;
+import com.mobspawncontroller.loadout.LoadoutParsing;
+import com.mobspawncontroller.loadout.MobLoadout;
+import com.mobspawncontroller.loadout.MobLoadoutJsonCodec;
 import com.mobspawncontroller.natural.NaturalSpawnSettings;
 import com.mobspawncontroller.natural.NaturalSpawnSettingsJsonCodec;
 import com.mobspawncontroller.natural.NaturalSpawnBoost;
@@ -24,6 +28,7 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.ai.attributes.Attribute;
@@ -54,18 +59,23 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class MobSpawnManager {
 
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    // Loadout NBT strings are full of single quotes, which HTML escaping would make unreadable in rules.json.
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final String ATTRIBUTES_KEY = "attributes";
     private static final String VANILLA_SPAWN_KEY = "vanilla_spawn";
     private static final String LEGACY_SPAWN_RESTRICTIONS_KEY = "spawn_restrictions";
     private static final String EXTRA_SPAWN_KEY = "extra_spawn";
+    private static final String LOADOUT_KEY = "loadout";
     private static final Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> RULES = new HashMap<>();
     private static final Map<ResourceLocation, Map<ResourceLocation, Double>> ATTRIBUTE_OVERRIDES = new HashMap<>();
     private static final Map<ResourceLocation, NaturalSpawnSettings> NATURAL_SPAWN_SETTINGS = new HashMap<>();
     private static final Map<ResourceLocation, ActiveSpawnSettings> ACTIVE_SPAWN_SETTINGS = new HashMap<>();
+    // Read from world-generation threads when structure mobs spawn, so it must tolerate concurrent access.
+    private static final Map<ResourceLocation, MobLoadout> LOADOUTS = new ConcurrentHashMap<>();
     private static Path savePath;
 
     private MobSpawnManager() {
@@ -146,6 +156,32 @@ public final class MobSpawnManager {
         }
     }
 
+    public static MobLoadout getLoadout(ResourceLocation mobId) {
+        return LOADOUTS.getOrDefault(mobId, MobLoadout.defaults());
+    }
+
+    public static MobLoadout getLoadoutOrNull(ResourceLocation mobId) {
+        return LOADOUTS.get(mobId);
+    }
+
+    public static Set<ResourceLocation> getLoadoutMobs() {
+        return Set.copyOf(LOADOUTS.keySet());
+    }
+
+    public static void setLoadout(ResourceLocation mobId, MobLoadout loadout) {
+        if (loadout == null || loadout.isDefault()) {
+            LOADOUTS.remove(mobId);
+        } else {
+            LOADOUTS.put(mobId, loadout);
+        }
+    }
+
+    /** Runs for every spawn that passed the rules: attribute overrides now, loadout once finalizeSpawn is done. */
+    public static void onSpawnAccepted(Mob mob, MobSpawnType spawnType, boolean extraSpawn) {
+        applyAttributeOverrides(mob);
+        LoadoutApplier.prepare(mob, spawnType, extraSpawn);
+    }
+
     public static void setAttributeOverrides(ResourceLocation mobId, Map<ResourceLocation, Double> attributes) {
         if (attributes.isEmpty()) {
             ATTRIBUTE_OVERRIDES.remove(mobId);
@@ -186,6 +222,7 @@ public final class MobSpawnManager {
         ATTRIBUTE_OVERRIDES.remove(mobId);
         NATURAL_SPAWN_SETTINGS.remove(mobId);
         ACTIVE_SPAWN_SETTINGS.remove(mobId);
+        LOADOUTS.remove(mobId);
         NaturalSpawnBoost.invalidate();
     }
 
@@ -194,6 +231,7 @@ public final class MobSpawnManager {
         ATTRIBUTE_OVERRIDES.clear();
         NATURAL_SPAWN_SETTINGS.clear();
         ACTIVE_SPAWN_SETTINGS.clear();
+        LOADOUTS.clear();
         NaturalSpawnBoost.invalidate();
     }
 
@@ -236,6 +274,16 @@ public final class MobSpawnManager {
             }
             mobObj.add(EXTRA_SPAWN_KEY, ActiveSpawnSettingsJsonCodec.encode(settings));
         });
+        LOADOUTS.forEach((mobId, loadout) -> {
+            JsonObject mobObj;
+            if (root.has(mobId.toString())) {
+                mobObj = root.getAsJsonObject(mobId.toString());
+            } else {
+                mobObj = new JsonObject();
+                root.add(mobId.toString(), mobObj);
+            }
+            mobObj.add(LOADOUT_KEY, MobLoadoutJsonCodec.encode(loadout));
+        });
 
         try {
             Files.createDirectories(savePath.getParent());
@@ -263,6 +311,8 @@ public final class MobSpawnManager {
         ATTRIBUTE_OVERRIDES.clear();
         NATURAL_SPAWN_SETTINGS.clear();
         ACTIVE_SPAWN_SETTINGS.clear();
+        LOADOUTS.clear();
+        LoadoutParsing.clearCache();
         NaturalSpawnBoost.invalidate();
         if (savePath == null || !Files.exists(savePath)) {
             return;
@@ -307,6 +357,13 @@ public final class MobSpawnManager {
                                 typeEntry.getValue().getAsJsonObject());
                         if (!settings.isDefault()) {
                             ACTIVE_SPAWN_SETTINGS.put(mobId, settings);
+                        }
+                        continue;
+                    }
+                    if (typeEntry.getKey().equals(LOADOUT_KEY) && typeEntry.getValue().isJsonObject()) {
+                        MobLoadout loadout = MobLoadoutJsonCodec.decode(typeEntry.getValue().getAsJsonObject());
+                        if (!loadout.isDefault()) {
+                            LOADOUTS.put(mobId, loadout);
                         }
                         continue;
                     }

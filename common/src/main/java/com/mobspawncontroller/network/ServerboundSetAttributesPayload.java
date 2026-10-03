@@ -51,9 +51,7 @@ public record ServerboundSetAttributesPayload(ResourceLocation mobId, Map<Resour
         MobSpawnManager.save();
         List<MobAttributeControl> controls = MobAttributeDiscovery.discover(player.serverLevel(), payload.mobId);
         NetworkBridge.sendToPlayer(player, new ClientboundSyncAttributesPayload(payload.mobId, controls));
-        NetworkBridge.sendToPlayer(player, new ClientboundSyncRulesPayload(MobSpawnManager.getAllRules(),
-                MobSpawnManager.getAttributeOverrideMobs(), MobSpawnManager.getAllNaturalSpawnSettings(),
-                MobSpawnManager.getAllActiveSpawnSettings()));
+        NetworkBridge.sendToPlayer(player, ClientboundSyncRulesPayload.current());
     }
 
     @Override

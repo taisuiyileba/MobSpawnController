@@ -6,13 +6,16 @@ import com.mobspawncontroller.client.ClientRuleSync;
 import com.mobspawncontroller.command.MobSpawnCommand;
 import com.mobspawncontroller.command.MobSpawnManager;
 import com.mobspawncontroller.network.ClientboundSyncAttributesPayload;
+import com.mobspawncontroller.network.ClientboundSyncLoadoutPayload;
 import com.mobspawncontroller.network.ClientboundSyncRulesPayload;
 import com.mobspawncontroller.network.ClientboundSyncStructuresPayload;
 import com.mobspawncontroller.network.ServerboundRequestAttributesPayload;
+import com.mobspawncontroller.network.ServerboundRequestLoadoutPayload;
 import com.mobspawncontroller.network.ServerboundRequestRulesPayload;
 import com.mobspawncontroller.network.ServerboundRequestStructuresPayload;
 import com.mobspawncontroller.network.ServerboundSetAttributesPayload;
 import com.mobspawncontroller.network.ServerboundSetActiveSpawnPayload;
+import com.mobspawncontroller.network.ServerboundSetLoadoutPayload;
 import com.mobspawncontroller.network.ServerboundSetNaturalSpawnPayload;
 import com.mobspawncontroller.network.ServerboundToggleSpawnPayload;
 import com.mobspawncontroller.natural.SpawnInterception;
@@ -65,7 +68,7 @@ public final class MobSpawnControllerNeoForge {
     }
 
     private void registerPayloads(RegisterPayloadHandlersEvent event) {
-        var registrar = event.registrar(MobSpawnController.MOD_ID).versioned("10").optional();
+        var registrar = event.registrar(MobSpawnController.MOD_ID).versioned("11").optional();
         registrar.playToServer(ServerboundToggleSpawnPayload.TYPE, ServerboundToggleSpawnPayload.STREAM_CODEC,
                 (payload, context) -> ServerboundToggleSpawnPayload.handle(payload, (ServerPlayer) context.player()));
         registrar.playToServer(ServerboundRequestRulesPayload.TYPE, ServerboundRequestRulesPayload.STREAM_CODEC,
@@ -80,11 +83,17 @@ public final class MobSpawnControllerNeoForge {
                 (payload, context) -> ServerboundSetActiveSpawnPayload.handle(payload, (ServerPlayer) context.player()));
         registrar.playToServer(ServerboundRequestStructuresPayload.TYPE, ServerboundRequestStructuresPayload.STREAM_CODEC,
                 (payload, context) -> ServerboundRequestStructuresPayload.handle(payload, (ServerPlayer) context.player()));
+        registrar.playToServer(ServerboundRequestLoadoutPayload.TYPE, ServerboundRequestLoadoutPayload.STREAM_CODEC,
+                (payload, context) -> ServerboundRequestLoadoutPayload.handle(payload, (ServerPlayer) context.player()));
+        registrar.playToServer(ServerboundSetLoadoutPayload.TYPE, ServerboundSetLoadoutPayload.STREAM_CODEC,
+                (payload, context) -> ServerboundSetLoadoutPayload.handle(payload, (ServerPlayer) context.player()));
         registrar.playToClient(ClientboundSyncRulesPayload.TYPE, ClientboundSyncRulesPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> ClientRuleSync.handle(payload)));
         registrar.playToClient(ClientboundSyncAttributesPayload.TYPE, ClientboundSyncAttributesPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> ClientRuleSync.handle(payload)));
         registrar.playToClient(ClientboundSyncStructuresPayload.TYPE, ClientboundSyncStructuresPayload.STREAM_CODEC,
+                (payload, context) -> context.enqueueWork(() -> ClientRuleSync.handle(payload)));
+        registrar.playToClient(ClientboundSyncLoadoutPayload.TYPE, ClientboundSyncLoadoutPayload.STREAM_CODEC,
                 (payload, context) -> context.enqueueWork(() -> ClientRuleSync.handle(payload)));
     }
 
@@ -126,7 +135,7 @@ public final class MobSpawnControllerNeoForge {
             event.setSpawnCancelled(true);
             return;
         }
-        MobSpawnManager.applyAttributeOverrides(event.getEntity());
+        MobSpawnManager.onSpawnAccepted(event.getEntity(), event.getSpawnType(), false);
     }
 
     private void onLevelTick(LevelTickEvent.Post event) {

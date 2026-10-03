@@ -4,13 +4,16 @@ import com.mobspawncontroller.MobSpawnController;
 import com.mobspawncontroller.active.ActiveSpawner;
 import com.mobspawncontroller.command.MobSpawnCommand;
 import com.mobspawncontroller.network.ClientboundSyncAttributesPayload;
+import com.mobspawncontroller.network.ClientboundSyncLoadoutPayload;
 import com.mobspawncontroller.network.ClientboundSyncRulesPayload;
 import com.mobspawncontroller.network.ClientboundSyncStructuresPayload;
 import com.mobspawncontroller.network.ServerboundRequestAttributesPayload;
+import com.mobspawncontroller.network.ServerboundRequestLoadoutPayload;
 import com.mobspawncontroller.network.ServerboundRequestRulesPayload;
 import com.mobspawncontroller.network.ServerboundRequestStructuresPayload;
 import com.mobspawncontroller.network.ServerboundSetAttributesPayload;
 import com.mobspawncontroller.network.ServerboundSetActiveSpawnPayload;
+import com.mobspawncontroller.network.ServerboundSetLoadoutPayload;
 import com.mobspawncontroller.network.ServerboundSetNaturalSpawnPayload;
 import com.mobspawncontroller.network.ServerboundToggleSpawnPayload;
 import com.mobspawncontroller.platform.NetworkBridge;
@@ -70,12 +73,18 @@ public final class MobSpawnControllerFabric implements ModInitializer {
                 ServerboundSetActiveSpawnPayload.STREAM_CODEC);
         PayloadTypeRegistry.playC2S().register(ServerboundRequestStructuresPayload.TYPE,
                 ServerboundRequestStructuresPayload.STREAM_CODEC);
+        PayloadTypeRegistry.playC2S().register(ServerboundRequestLoadoutPayload.TYPE,
+                ServerboundRequestLoadoutPayload.STREAM_CODEC);
+        PayloadTypeRegistry.playC2S().register(ServerboundSetLoadoutPayload.TYPE,
+                ServerboundSetLoadoutPayload.STREAM_CODEC);
         PayloadTypeRegistry.playS2C().register(ClientboundSyncRulesPayload.TYPE,
                 ClientboundSyncRulesPayload.STREAM_CODEC);
         PayloadTypeRegistry.playS2C().register(ClientboundSyncAttributesPayload.TYPE,
                 ClientboundSyncAttributesPayload.STREAM_CODEC);
         PayloadTypeRegistry.playS2C().register(ClientboundSyncStructuresPayload.TYPE,
                 ClientboundSyncStructuresPayload.STREAM_CODEC);
+        PayloadTypeRegistry.playS2C().register(ClientboundSyncLoadoutPayload.TYPE,
+                ClientboundSyncLoadoutPayload.STREAM_CODEC);
 
         ServerPlayNetworking.registerGlobalReceiver(ServerboundToggleSpawnPayload.TYPE,
                 (payload, context) -> context.server().execute(() ->
@@ -98,5 +107,11 @@ public final class MobSpawnControllerFabric implements ModInitializer {
         ServerPlayNetworking.registerGlobalReceiver(ServerboundRequestStructuresPayload.TYPE,
                 (payload, context) -> context.server().execute(() ->
                         ServerboundRequestStructuresPayload.handle(payload, context.player())));
+        ServerPlayNetworking.registerGlobalReceiver(ServerboundRequestLoadoutPayload.TYPE,
+                (payload, context) -> context.server().execute(() ->
+                        ServerboundRequestLoadoutPayload.handle(payload, context.player())));
+        ServerPlayNetworking.registerGlobalReceiver(ServerboundSetLoadoutPayload.TYPE,
+                (payload, context) -> context.server().execute(() ->
+                        ServerboundSetLoadoutPayload.handle(payload, context.player())));
     }
 }

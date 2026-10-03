@@ -2,6 +2,7 @@ package com.mobspawncontroller.network;
 
 import com.mobspawncontroller.MobSpawnController;
 import com.mobspawncontroller.active.ActiveSpawnSettings;
+import com.mobspawncontroller.command.MobSpawnManager;
 import com.mobspawncontroller.natural.NaturalSpawnSettings;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -18,7 +19,8 @@ import java.util.Set;
 public record ClientboundSyncRulesPayload(Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> rules,
                                           Set<ResourceLocation> attributeModifiedMobs,
                                           Map<ResourceLocation, NaturalSpawnSettings> naturalSpawnSettings,
-                                          Map<ResourceLocation, ActiveSpawnSettings> activeSpawnSettings)
+                                          Map<ResourceLocation, ActiveSpawnSettings> activeSpawnSettings,
+                                          Set<ResourceLocation> loadoutMobs)
         implements CustomPacketPayload {
 
     public ClientboundSyncRulesPayload {
@@ -28,6 +30,13 @@ public record ClientboundSyncRulesPayload(Map<ResourceLocation, EnumMap<MobSpawn
         attributeModifiedMobs = Set.copyOf(attributeModifiedMobs);
         naturalSpawnSettings = Map.copyOf(naturalSpawnSettings);
         activeSpawnSettings = Map.copyOf(activeSpawnSettings);
+        loadoutMobs = Set.copyOf(loadoutMobs);
+    }
+
+    public static ClientboundSyncRulesPayload current() {
+        return new ClientboundSyncRulesPayload(MobSpawnManager.getAllRules(),
+                MobSpawnManager.getAttributeOverrideMobs(), MobSpawnManager.getAllNaturalSpawnSettings(),
+                MobSpawnManager.getAllActiveSpawnSettings(), MobSpawnManager.getLoadoutMobs());
     }
 
     public static final Type<ClientboundSyncRulesPayload> TYPE =
@@ -67,8 +76,13 @@ public record ClientboundSyncRulesPayload(Map<ResourceLocation, EnumMap<MobSpawn
         for (int i = 0; i < activeSize; i++) {
             activeSpawnSettings.put(buf.readResourceLocation(), ActiveSpawnSettings.read(buf));
         }
+        int loadoutSize = buf.readVarInt();
+        Set<ResourceLocation> loadoutMobs = new HashSet<>();
+        for (int i = 0; i < loadoutSize; i++) {
+            loadoutMobs.add(buf.readResourceLocation());
+        }
         return new ClientboundSyncRulesPayload(rules, attributeModifiedMobs, naturalSpawnSettings,
-                activeSpawnSettings);
+                activeSpawnSettings, loadoutMobs);
     }
 
     private static void write(RegistryFriendlyByteBuf buf, ClientboundSyncRulesPayload payload) {
@@ -93,6 +107,8 @@ public record ClientboundSyncRulesPayload(Map<ResourceLocation, EnumMap<MobSpawn
             buf.writeResourceLocation(mobId);
             settings.write(buf);
         });
+        buf.writeVarInt(payload.loadoutMobs.size());
+        payload.loadoutMobs.forEach(buf::writeResourceLocation);
     }
 
     @Override

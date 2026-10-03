@@ -32,18 +32,23 @@ class ClientboundSyncRulesPayloadTest {
         Map<ResourceLocation, ActiveSpawnSettings> activeSettings = new HashMap<>();
         activeSettings.put(mobId, ActiveSpawnSettings.defaults());
 
+        Set<ResourceLocation> loadoutMobs = new HashSet<>();
+        loadoutMobs.add(mobId);
+
         ClientboundSyncRulesPayload payload = new ClientboundSyncRulesPayload(
-                rules, attributeMobs, Map.of(), activeSettings);
+                rules, attributeMobs, Map.of(), activeSettings, loadoutMobs);
 
         mobRules.put(MobSpawnType.COMMAND, false);
         rules.clear();
         attributeMobs.clear();
         activeSettings.clear();
+        loadoutMobs.clear();
 
         assertTrue(payload.rules().containsKey(mobId));
         assertFalse(payload.rules().get(mobId).containsKey(MobSpawnType.COMMAND));
         assertTrue(payload.attributeModifiedMobs().contains(mobId));
         assertTrue(payload.activeSpawnSettings().containsKey(mobId));
+        assertTrue(payload.loadoutMobs().contains(mobId));
 
         RegistryFriendlyByteBuf buffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
         try {

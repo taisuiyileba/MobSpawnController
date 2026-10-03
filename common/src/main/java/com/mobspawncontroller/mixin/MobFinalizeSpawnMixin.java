@@ -28,6 +28,6 @@ public abstract class MobFinalizeSpawnMixin {
             callback.setReturnValue(spawnGroupData);
             return;
         }
-        MobSpawnManager.applyAttributeOverrides(mob);
+        MobSpawnManager.onSpawnAccepted(mob, spawnType, false);
     }
 }

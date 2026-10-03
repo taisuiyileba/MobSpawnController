@@ -3,6 +3,7 @@ package com.mobspawncontroller.fabric;
 import com.mobspawncontroller.client.ClientRuleSync;
 import com.mobspawncontroller.client.gui.MobSpawnControllerScreen;
 import com.mobspawncontroller.network.ClientboundSyncAttributesPayload;
+import com.mobspawncontroller.network.ClientboundSyncLoadoutPayload;
 import com.mobspawncontroller.network.ClientboundSyncRulesPayload;
 import com.mobspawncontroller.network.ClientboundSyncStructuresPayload;
 import com.mobspawncontroller.platform.NetworkBridge;
@@ -47,6 +48,8 @@ public final class MobSpawnControllerFabricClient implements ClientModInitialize
         ClientPlayNetworking.registerGlobalReceiver(ClientboundSyncAttributesPayload.TYPE,
                 (payload, context) -> context.client().execute(() -> ClientRuleSync.handle(payload)));
         ClientPlayNetworking.registerGlobalReceiver(ClientboundSyncStructuresPayload.TYPE,
+                (payload, context) -> context.client().execute(() -> ClientRuleSync.handle(payload)));
+        ClientPlayNetworking.registerGlobalReceiver(ClientboundSyncLoadoutPayload.TYPE,
                 (payload, context) -> context.client().execute(() -> ClientRuleSync.handle(payload)));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {

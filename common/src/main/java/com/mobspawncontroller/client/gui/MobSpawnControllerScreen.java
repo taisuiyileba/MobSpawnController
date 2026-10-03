@@ -49,6 +49,7 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
     private static final int RULES_ACCENT_COLOR = 0xFFFFAA00;
     private static final int NATURAL_ACCENT_COLOR = 0xFF34D399;
     private static final int ACTIVE_ACCENT_COLOR = 0xFFC084FC;
+    private static final int LOADOUT_ACCENT_COLOR = 0xFFF472B6;
     private static final int DROPDOWN_ITEM_HEIGHT = 14;
     private static final int DROPDOWN_MAX_VISIBLE_ITEMS = 18;
     private static String savedSearchText = "";
@@ -77,13 +78,16 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
             "gui.mobspawncontroller.filter.natural_modified",
             "gui.mobspawncontroller.filter.natural_unmodified",
             "gui.mobspawncontroller.filter.active_modified",
-            "gui.mobspawncontroller.filter.active_unmodified"
+            "gui.mobspawncontroller.filter.active_unmodified",
+            "gui.mobspawncontroller.filter.loadout_modified",
+            "gui.mobspawncontroller.filter.loadout_unmodified"
     );
 
     private Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> rules = new HashMap<>();
     private Set<ResourceLocation> attributeModifiedMobIds = new HashSet<>();
     private Map<ResourceLocation, NaturalSpawnSettings> naturalSpawnSettings = new HashMap<>();
     private Map<ResourceLocation, ActiveSpawnSettings> activeSpawnSettings = new HashMap<>();
+    private Set<ResourceLocation> loadoutMobIds = new HashSet<>();
     private List<ResourceLocation> allMobIds = new ArrayList<>();
     private List<ResourceLocation> filteredMobIds = new ArrayList<>();
 
@@ -178,6 +182,12 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
         applyFilter();
     }
 
+    @Override
+    public void onLoadoutMobsReceived(Set<ResourceLocation> mobIds) {
+        this.loadoutMobIds = new HashSet<>(mobIds);
+        applyFilter();
+    }
+
     public Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> getRules() {
         return rules;
     }
@@ -192,6 +202,10 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
 
     public Map<ResourceLocation, ActiveSpawnSettings> getActiveSpawnSettings() {
         return activeSpawnSettings;
+    }
+
+    public Set<ResourceLocation> getLoadoutMobIds() {
+        return loadoutMobIds;
     }
 
     private void applyFilter() {
@@ -269,6 +283,13 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
         }
         if (selectedAttributeStatus.equals("gui.mobspawncontroller.filter.active_unmodified")) {
             return !activeModified;
+        }
+        boolean loadoutModified = loadoutMobIds.contains(id);
+        if (selectedAttributeStatus.equals("gui.mobspawncontroller.filter.loadout_modified")) {
+            return loadoutModified;
+        }
+        if (selectedAttributeStatus.equals("gui.mobspawncontroller.filter.loadout_unmodified")) {
+            return !loadoutModified;
         }
         return true;
     }
@@ -352,6 +373,7 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
             boolean hasAttributeOverride = attributeModifiedMobIds.contains(mobId);
             boolean hasNaturalSettings = naturalSpawnSettings.containsKey(mobId);
             boolean hasActiveSettings = activeSpawnSettings.containsKey(mobId);
+            boolean hasLoadout = loadoutMobIds.contains(mobId);
             boolean rowHovered = mouseX >= listLeft && mouseX < listRight && mouseY >= rowY && mouseY < rowY + ROW_HEIGHT;
             if (idx % 2 == 0) {
                 guiGraphics.fill(listLeft, rowY, listRight, rowY + ROW_HEIGHT - 1, ROW_BG);
@@ -370,6 +392,10 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
             }
             if (hasActiveSettings) {
                 guiGraphics.fill(accentX, rowY, accentX + 2, rowY + ROW_HEIGHT - 1, ACTIVE_ACCENT_COLOR);
+                accentX += 2;
+            }
+            if (hasLoadout) {
+                guiGraphics.fill(accentX, rowY, accentX + 2, rowY + ROW_HEIGHT - 1, LOADOUT_ACCENT_COLOR);
                 accentX += 2;
             }
             if (hasAnyRule) {

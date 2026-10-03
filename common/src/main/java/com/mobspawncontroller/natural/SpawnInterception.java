@@ -37,7 +37,7 @@ public final class SpawnInterception {
     }
 
     /**
-     * Finalizes an extra-spawner mob through the general spawn switch and attribute overrides.
+     * Finalizes an extra-spawner mob through the general spawn switch, attribute overrides and loadout.
      * Vanilla-spawn conditions are intentionally not evaluated because extra spawning has its own page.
      * The marker prevents loader hooks from applying probabilistic conditions a second time.
      */
@@ -46,7 +46,7 @@ public final class SpawnInterception {
             mob.discard();
             return false;
         }
-        MobSpawnManager.applyAttributeOverrides(mob);
+        MobSpawnManager.onSpawnAccepted(mob, spawnType, true);
         Set<Mob> prechecked = PRECHECKED_MOBS.get();
         prechecked.add(mob);
         try {
@@ -70,7 +70,7 @@ public final class SpawnInterception {
             return spawnData;
         }
 
-        MobSpawnManager.applyAttributeOverrides(mob);
+        MobSpawnManager.onSpawnAccepted(mob, spawnType, false);
         Set<Mob> prechecked = PRECHECKED_MOBS.get();
         prechecked.add(mob);
         try {
