@@ -1808,6 +1808,8 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
                     .withStyle(ChatFormatting.AQUA));
             lines.add(Component.translatable("gui.mobspawncontroller.tooltip.spawn_rule")
                     .withStyle(ChatFormatting.GRAY));
+            lines.add(Component.translatable("gui.mobspawncontroller.tooltip.spawn_rule_all_off")
+                    .withStyle(ChatFormatting.GRAY));
             Component state = Component.translatable(editRules.getOrDefault(spawnType, true)
                     ? "gui.mobspawncontroller.filter.enabled"
                     : "gui.mobspawncontroller.filter.disabled");

@@ -28,6 +28,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.MobSpawnType;
 import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.common.Mod;
@@ -48,7 +49,6 @@ public final class MobSpawnControllerNeoForge {
 
     public MobSpawnControllerNeoForge(IEventBus modBus) {
         ModCompat.setModLoadedChecker(modId -> ModList.get().isLoaded(modId));
-        SpawnInterception.setPlatformHandlesFinalizeSpawn(true);
         MobSpawnController.setConfigDirectory(FMLPaths.CONFIGDIR.get());
         MobSpawnController.init();
         NetworkBridge.setSender(new NeoForgePacketSender());
@@ -59,7 +59,8 @@ public final class MobSpawnControllerNeoForge {
         NeoForge.EVENT_BUS.addListener(this::onRegisterCommands);
         NeoForge.EVENT_BUS.addListener(this::onSpawnPlacementCheck);
         NeoForge.EVENT_BUS.addListener(this::onPositionCheck);
-        NeoForge.EVENT_BUS.addListener(this::onFinalizeSpawn);
+        // Cancelling this event only skips Mob#finalizeSpawn; the mob still spawns, so judge it regardless.
+        NeoForge.EVENT_BUS.addListener(EventPriority.NORMAL, true, FinalizeSpawnEvent.class, this::onFinalizeSpawn);
         NeoForge.EVENT_BUS.addListener(this::onLevelTick);
 
         if (FMLEnvironment.dist == Dist.CLIENT) {
@@ -128,14 +129,18 @@ public final class MobSpawnControllerNeoForge {
     }
 
     private void onFinalizeSpawn(FinalizeSpawnEvent event) {
-        if (SpawnInterception.isPrechecked(event.getEntity())) {
+        if (SpawnInterception.isSpawnChecked(event.getEntity())) {
             return;
         }
-        if (!MobSpawnManager.isSpawnAllowed(event.getEntity(), event.getLevel(), event.getSpawnType())) {
-            event.setSpawnCancelled(true);
-            return;
+        if (!SpawnInterception.checkBeforeFinalize(event.getEntity(), event.getLevel(), event.getSpawnType())) {
+            // NeoForge rejects setSpawnCancelled once the mob joined, which happens when finalizeSpawn runs late.
+            if (event.getEntity().isAddedToLevel()) {
+                event.getEntity().discard();
+                event.setCanceled(true);
+            } else {
+                event.setSpawnCancelled(true);
+            }
         }
-        MobSpawnManager.onSpawnAccepted(event.getEntity(), event.getSpawnType(), false);
     }
 
     private void onLevelTick(LevelTickEvent.Post event) {

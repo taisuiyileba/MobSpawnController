@@ -70,6 +70,7 @@ public final class MobSpawnManager {
     private static final String LEGACY_SPAWN_RESTRICTIONS_KEY = "spawn_restrictions";
     private static final String EXTRA_SPAWN_KEY = "extra_spawn";
     private static final String LOADOUT_KEY = "loadout";
+    private static final int SPAWN_TYPE_COUNT = MobSpawnType.values().length;
     private static final Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> RULES = new HashMap<>();
     private static final Map<ResourceLocation, Map<ResourceLocation, Double>> ATTRIBUTE_OVERRIDES = new HashMap<>();
     private static final Map<ResourceLocation, NaturalSpawnSettings> NATURAL_SPAWN_SETTINGS = new HashMap<>();
@@ -415,6 +416,16 @@ public final class MobSpawnManager {
         ResourceLocation mobId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         Boolean allowed = getAllowed(mobId, spawnType);
         return allowed == null || allowed;
+    }
+
+    /** True when every spawn-type switch is off, which the GUI lists as disabled. */
+    public static boolean isFullyDisabled(Entity entity) {
+        return isFullyDisabled(BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()));
+    }
+
+    public static boolean isFullyDisabled(ResourceLocation mobId) {
+        EnumMap<MobSpawnType, Boolean> map = RULES.get(mobId);
+        return map != null && map.size() == SPAWN_TYPE_COUNT && !map.containsValue(Boolean.TRUE);
     }
 
     /** Returns false when an applicable spawn fails one of the configured GUI conditions. */

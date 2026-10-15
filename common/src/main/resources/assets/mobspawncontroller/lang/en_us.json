@@ -302,6 +302,7 @@
   "gui.mobspawncontroller.attributes.tooltip.overridden": "This override will be applied to newly spawned entities",
   "gui.mobspawncontroller.attributes.tooltip.default": "Using the entity default; editing creates an override",
   "gui.mobspawncontroller.tooltip.spawn_rule": "Controls whether the server permits this spawn path; disabling it blocks that spawn type",
+  "gui.mobspawncontroller.tooltip.spawn_rule_all_off": "With every switch off, spawns that cannot be classified (slime splitting, built golems, mods adding mobs directly...) are blocked too",
   "gui.mobspawncontroller.tooltip.current": "Current: %s",
   "gui.mobspawncontroller.no_permission": "You do not have permission to modify mob spawn rules!",
   "gui.mobspawncontroller.spawntype.natural": "Natural",
