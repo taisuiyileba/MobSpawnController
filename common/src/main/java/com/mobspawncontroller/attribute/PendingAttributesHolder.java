@@ -1,13 +1,13 @@
 package com.mobspawncontroller.attribute;
 
-/** Transient spawn state; attribute overrides are applied once after the mob's own initialization. */
+/** Pending attribute overrides for a mob's spawn. */
 public interface PendingAttributesHolder {
 
     enum State {
-        NONE, PENDING, PENDING_PRESERVE_HEALTH, APPLIED;
+        NONE, PENDING, PENDING_PRESERVE_HEALTH;
 
         public boolean isPending() {
-            return this == PENDING || this == PENDING_PRESERVE_HEALTH;
+            return this != NONE;
         }
     }
 

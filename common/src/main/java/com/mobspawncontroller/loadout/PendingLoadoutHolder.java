@@ -6,8 +6,4 @@ public interface PendingLoadoutHolder {
     LoadoutPreset mobspawncontroller$getPendingLoadout();
 
     void mobspawncontroller$setPendingLoadout(LoadoutPreset preset);
-
-    boolean mobspawncontroller$hasAppliedLoadout();
-
-    void mobspawncontroller$markLoadoutApplied();
 }
