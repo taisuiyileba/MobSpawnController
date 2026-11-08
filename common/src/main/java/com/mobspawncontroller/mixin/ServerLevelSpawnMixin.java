@@ -20,7 +20,7 @@ public abstract class ServerLevelSpawnMixin {
     }
 
     @Inject(method = "addFreshEntity", at = @At("RETURN"))
-    private void mobspawncontroller$acceptTaggedSpawn(Entity entity, CallbackInfoReturnable<Boolean> callback) {
+    private void mobspawncontroller$acceptFreshSpawn(Entity entity, CallbackInfoReturnable<Boolean> callback) {
         SpawnInterception.acceptOnJoin(entity, callback.getReturnValueZ());
     }
 }

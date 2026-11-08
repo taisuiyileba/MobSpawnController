@@ -1,5 +1,6 @@
 package com.mobspawncontroller.mixin;
 
+import com.mobspawncontroller.command.MobSpawnManager;
 import com.mobspawncontroller.loadout.LoadoutApplier;
 import com.mobspawncontroller.natural.SpawnInterception;
 import net.minecraft.server.level.WorldGenRegion;
@@ -23,6 +24,7 @@ public abstract class WorldGenRegionSpawnMixin {
             return;
         }
         SpawnInterception.acceptOnJoin(entity, true);
+        MobSpawnManager.applyPendingAttributeOverrides(entity);
         LoadoutApplier.applyPending(entity);
     }
 }

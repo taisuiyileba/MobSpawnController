@@ -61,7 +61,9 @@ public record NaturalSpawnSettings(
         List<String> blocksAbove,
         List<String> excludedBlocksAbove,
         List<MobSpawnType> spawnTypes,
-        List<MobSpawnType> excludedSpawnTypes
+        List<MobSpawnType> excludedSpawnTypes,
+        boolean includeUnknownSpawns,
+        boolean excludeUnknownSpawns
 ) {
 
     public NaturalSpawnSettings {
@@ -126,7 +128,7 @@ public record NaturalSpawnSettings(
                 null, null, null, 16.0,
                 null, null, null, null,
                 List.of(), List.of(), List.of(), List.of(),
-                List.of(MobSpawnType.NATURAL), List.of());
+                List.of(MobSpawnType.NATURAL), List.of(), false, false);
     }
 
     public boolean isDefault() {
@@ -135,8 +137,11 @@ public record NaturalSpawnSettings(
 
     /** Returns whether this detailed condition set applies to the supplied spawn reason. */
     public boolean appliesTo(MobSpawnType spawnType) {
-        return spawnType != null
-                && (spawnTypes.isEmpty() || spawnTypes.contains(spawnType))
+        // Unknown origins are explicitly opted in, even when a legacy empty list means all known types.
+        if (spawnType == null) {
+            return includeUnknownSpawns && !excludeUnknownSpawns;
+        }
+        return ((spawnTypes.isEmpty() && !includeUnknownSpawns) || spawnTypes.contains(spawnType))
                 && !excludedSpawnTypes.contains(spawnType);
     }
 
@@ -190,6 +195,8 @@ public record NaturalSpawnSettings(
         writeSelectors(buf, excludedBlocksAbove);
         writeSpawnTypes(buf, spawnTypes);
         writeSpawnTypes(buf, excludedSpawnTypes);
+        buf.writeBoolean(includeUnknownSpawns);
+        buf.writeBoolean(excludeUnknownSpawns);
     }
 
     public static NaturalSpawnSettings read(FriendlyByteBuf buf) {
@@ -212,7 +219,7 @@ public record NaturalSpawnSettings(
                 readNullableInt(buf), readNullableInt(buf), readNullableInt(buf), buf.readDouble(),
                 readNullableInt(buf), readNullableInt(buf), readNullableInt(buf), readNullableInt(buf),
                 readSelectors(buf), readSelectors(buf), readSelectors(buf), readSelectors(buf),
-                readSpawnTypes(buf), readSpawnTypes(buf));
+                readSpawnTypes(buf), readSpawnTypes(buf), buf.readBoolean(), buf.readBoolean());
     }
 
     private static void writeResources(FriendlyByteBuf buf, List<ResourceLocation> values) {

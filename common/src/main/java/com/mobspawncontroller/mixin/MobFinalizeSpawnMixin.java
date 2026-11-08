@@ -23,6 +23,10 @@ public abstract class MobFinalizeSpawnMixin implements SpawnCheckHolder {
     @Unique
     private boolean mobspawncontroller$spawnChecked;
     @Unique
+    private boolean mobspawncontroller$joined;
+    @Unique
+    private boolean mobspawncontroller$unknownConditionsChecked;
+    @Unique
     private MobSpawnType mobspawncontroller$spawnSource;
 
     @Override
@@ -33,6 +37,26 @@ public abstract class MobFinalizeSpawnMixin implements SpawnCheckHolder {
     @Override
     public void mobspawncontroller$setSpawnChecked(boolean checked) {
         mobspawncontroller$spawnChecked = checked;
+    }
+
+    @Override
+    public boolean mobspawncontroller$hasJoined() {
+        return mobspawncontroller$joined;
+    }
+
+    @Override
+    public void mobspawncontroller$markJoined() {
+        mobspawncontroller$joined = true;
+    }
+
+    @Override
+    public boolean mobspawncontroller$areUnknownConditionsChecked() {
+        return mobspawncontroller$unknownConditionsChecked;
+    }
+
+    @Override
+    public void mobspawncontroller$setUnknownConditionsChecked(boolean checked) {
+        mobspawncontroller$unknownConditionsChecked = checked;
     }
 
     @Override

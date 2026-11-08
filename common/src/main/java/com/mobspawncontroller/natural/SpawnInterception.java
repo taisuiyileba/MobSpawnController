@@ -1,6 +1,7 @@
 package com.mobspawncontroller.natural;
 
 import com.mobspawncontroller.command.MobSpawnManager;
+import com.mobspawncontroller.loadout.LoadoutApplier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.entity.Entity;
@@ -34,11 +35,18 @@ public final class SpawnInterception {
         SpawnCheckHolder holder = (SpawnCheckHolder) mob;
         holder.mobspawncontroller$setSpawnChecked(true);
         holder.mobspawncontroller$setSpawnSource(null);
-        if (!MobSpawnManager.isSpawnAllowed(mob, level, spawnType)) {
+        if (!isKnownSpawnAllowed(mob, level, spawnType)) {
             return false;
         }
-        MobSpawnManager.onSpawnAccepted(mob, spawnType, false);
+        MobSpawnManager.queueAttributeOverrides(mob, false);
+        LoadoutApplier.prepare(mob, spawnType, false);
         return true;
+    }
+
+    private static boolean isKnownSpawnAllowed(Mob mob, ServerLevelAccessor level, MobSpawnType spawnType) {
+        return MobSpawnManager.isSpawnTypeAllowed(mob, spawnType)
+                && (((SpawnCheckHolder) mob).mobspawncontroller$areUnknownConditionsChecked()
+                || MobSpawnManager.isNaturalSpawnAllowed(mob, level, spawnType));
     }
 
     /**
@@ -51,7 +59,8 @@ public final class SpawnInterception {
             mob.discard();
             return false;
         }
-        MobSpawnManager.onSpawnAccepted(mob, spawnType, true);
+        MobSpawnManager.queueAttributeOverrides(mob, false);
+        LoadoutApplier.prepare(mob, spawnType, true);
         mob.finalizeSpawn(level, level.getCurrentDifficultyAt(mob.blockPosition()), spawnType, null);
         return !mob.isRemoved();
     }
@@ -77,8 +86,11 @@ public final class SpawnInterception {
      */
     public static Entity tagSpawnSource(Entity entity, MobSpawnType spawnType) {
         entity.getSelfAndPassengers().forEach(part -> {
-            if (part instanceof Mob mob && !isSpawnChecked(mob)) {
-                ((SpawnCheckHolder) mob).mobspawncontroller$setSpawnSource(spawnType);
+            if (part instanceof Mob mob) {
+                SpawnCheckHolder holder = (SpawnCheckHolder) mob;
+                if (!holder.mobspawncontroller$isSpawnChecked() && !holder.mobspawncontroller$hasJoined()) {
+                    holder.mobspawncontroller$setSpawnSource(spawnType);
+                }
             }
         });
         return entity;
@@ -87,7 +99,8 @@ public final class SpawnInterception {
     /**
      * Judges a mob that is being added to a level without having been checked before finalizeSpawn.
      * Tagged mobs get the full rules for their spawn type. Mobs of unknown origin are only blocked when
-     * every spawn type is switched off, and stay unchecked so a later finalizeSpawn still judges them.
+     * every spawn type is switched off, or when explicitly opted-in unknown-origin conditions deny them.
+     * Unknown mobs keep their type check pending so a later finalizeSpawn can still apply its switch.
      * Returns false when the mob must not be added.
      */
     public static boolean checkOnJoin(Entity entity, ServerLevelAccessor level) {
@@ -95,8 +108,7 @@ public final class SpawnInterception {
             return true;
         }
         SpawnCheckHolder holder = (SpawnCheckHolder) mob;
-        if (holder.mobspawncontroller$isSpawnChecked()) {
-            holder.mobspawncontroller$setSpawnSource(null);
+        if (holder.mobspawncontroller$isSpawnChecked() || holder.mobspawncontroller$hasJoined()) {
             // Denied spawns were discarded already; refusing here avoids vanilla's "marked as removed" warning.
             return !mob.isRemoved();
         }
@@ -105,9 +117,14 @@ public final class SpawnInterception {
         boolean allowed;
         if (source != null) {
             holder.mobspawncontroller$setSpawnChecked(true);
-            allowed = MobSpawnManager.isSpawnAllowed(mob, level, source);
+            allowed = isKnownSpawnAllowed(mob, level, source);
         } else {
             allowed = !MobSpawnManager.isFullyDisabled(mob);
+            if (allowed && !holder.mobspawncontroller$areUnknownConditionsChecked()
+                    && MobSpawnManager.hasUnknownSpawnConditions(mob)) {
+                holder.mobspawncontroller$setUnknownConditionsChecked(true);
+                allowed = MobSpawnManager.isNaturalSpawnAllowed(mob, level, null);
+            }
         }
         if (!allowed) {
             holder.mobspawncontroller$setSpawnChecked(true);
@@ -118,22 +135,23 @@ public final class SpawnInterception {
     }
 
     /**
-     * Applies attribute overrides and picks a loadout for a tagged mob accepted by {@link #checkOnJoin}.
-     * In a running level this runs after the mob joined, so a loadout lands on its first tick, after any
-     * finalizeSpawn the caller still runs (conversions do that).
+     * Queues the post-join changes for a mob that joined without being finalized first.
+     * A late finalizeSpawn can still check the source rules before the pending changes are applied.
      */
     public static void acceptOnJoin(Entity entity, boolean added) {
-        if (!(entity instanceof Mob mob)) {
+        if (!added || !(entity instanceof Mob mob)) {
             return;
         }
         SpawnCheckHolder holder = (SpawnCheckHolder) mob;
-        MobSpawnType source = holder.mobspawncontroller$getSpawnSource();
-        if (source == null) {
+        if (holder.mobspawncontroller$hasJoined()) {
             return;
         }
+        holder.mobspawncontroller$markJoined();
+        MobSpawnType source = holder.mobspawncontroller$getSpawnSource();
         holder.mobspawncontroller$setSpawnSource(null);
-        if (added) {
-            MobSpawnManager.onSpawnAccepted(mob, source, false);
+        if (source != null || !holder.mobspawncontroller$isSpawnChecked()) {
+            MobSpawnManager.queueAttributeOverrides(mob, source == null);
+            LoadoutApplier.prepare(mob, source, false);
         }
     }
 }

@@ -118,7 +118,7 @@ class MobSpawnManagerPersistenceTest {
                 4, 24.0,
                 null, null, null, null,
                 List.of(), List.of(), List.of(), List.of(),
-                List.of(MobSpawnType.NATURAL, MobSpawnType.COMMAND), List.of());
+                List.of(MobSpawnType.NATURAL, MobSpawnType.COMMAND), List.of(), true, false);
     }
 
     private static ResourceLocation id(String namespace, String path) {

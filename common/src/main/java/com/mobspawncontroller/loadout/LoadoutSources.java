@@ -10,12 +10,13 @@ import java.util.Locale;
 public final class LoadoutSources {
 
     public static final String EXTRA_SPAWN = "extra_spawn";
+    public static final String UNKNOWN = "unknown";
 
     private LoadoutSources() {
     }
 
     public static String of(MobSpawnType spawnType) {
-        return spawnType.name().toLowerCase(Locale.ROOT);
+        return spawnType == null ? UNKNOWN : spawnType.name().toLowerCase(Locale.ROOT);
     }
 
     public static List<String> all() {
@@ -23,6 +24,7 @@ public final class LoadoutSources {
         for (MobSpawnType type : MobSpawnType.values()) {
             sources.add(of(type));
         }
+        sources.add(UNKNOWN);
         sources.add(EXTRA_SPAWN);
         return sources;
     }

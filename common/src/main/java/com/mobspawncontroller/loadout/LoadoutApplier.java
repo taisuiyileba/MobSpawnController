@@ -28,14 +28,11 @@ public final class LoadoutApplier {
 
     public static void prepare(Mob mob, MobSpawnType spawnType, boolean extraSpawn) {
         PendingLoadoutHolder holder = (PendingLoadoutHolder) mob;
+        if (holder.mobspawncontroller$hasAppliedLoadout()) return;
         holder.mobspawncontroller$setPendingLoadout(null);
         ResourceLocation mobId = BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType());
         MobLoadout loadout = MobSpawnManager.getLoadoutOrNull(mobId);
         if (loadout == null || loadout.presets().isEmpty()) return;
-
-        // The entity's own random keeps world-generation threads off the shared level random.
-        RandomSource random = mob.getRandom();
-        if (random.nextDouble() >= loadout.chance()) return;
 
         String source = extraSpawn ? LoadoutSources.EXTRA_SPAWN : LoadoutSources.of(spawnType);
         long day = mob.level().getDayTime() / 24000L;
@@ -49,6 +46,9 @@ public final class LoadoutApplier {
         }
         if (totalWeight <= 0) return;
 
+        // The entity's own random keeps world-generation threads off the shared level random.
+        RandomSource random = mob.getRandom();
+        if (random.nextDouble() >= loadout.chance()) return;
         int roll = random.nextInt(totalWeight);
         for (LoadoutPreset preset : candidates) {
             roll -= preset.weight();
@@ -65,6 +65,7 @@ public final class LoadoutApplier {
         LoadoutPreset preset = holder.mobspawncontroller$getPendingLoadout();
         if (preset == null) return;
         holder.mobspawncontroller$setPendingLoadout(null);
+        holder.mobspawncontroller$markLoadoutApplied();
         try {
             apply(mob, preset);
         } catch (RuntimeException exception) {
@@ -77,12 +78,13 @@ public final class LoadoutApplier {
     private static void apply(Mob mob, LoadoutPreset preset) {
         CompoundTag nbt = LoadoutParsing.cachedNbt(preset.nbt());
         if (nbt != null && !nbt.isEmpty()) {
+            boolean wasFullHealth = mob.getHealth() >= mob.getMaxHealth();
             UUID uuid = mob.getUUID();
             CompoundTag merged = mob.saveWithoutId(new CompoundTag());
             merged.merge(nbt);
             mob.load(merged);
             mob.setUUID(uuid);
-            if (!nbt.contains("Health")) mob.setHealth(mob.getMaxHealth());
+            if (wasFullHealth && !nbt.contains("Health")) mob.setHealth(mob.getMaxHealth());
         }
 
         for (EquipmentSlot slot : LoadoutPreset.SLOT_ORDER) {

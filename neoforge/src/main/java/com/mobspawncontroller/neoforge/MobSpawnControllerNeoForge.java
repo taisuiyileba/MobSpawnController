@@ -69,7 +69,7 @@ public final class MobSpawnControllerNeoForge {
     }
 
     private void registerPayloads(RegisterPayloadHandlersEvent event) {
-        var registrar = event.registrar(MobSpawnController.MOD_ID).versioned("11").optional();
+        var registrar = event.registrar(MobSpawnController.MOD_ID).versioned("12").optional();
         registrar.playToServer(ServerboundToggleSpawnPayload.TYPE, ServerboundToggleSpawnPayload.STREAM_CODEC,
                 (payload, context) -> ServerboundToggleSpawnPayload.handle(payload, (ServerPlayer) context.player()));
         registrar.playToServer(ServerboundRequestRulesPayload.TYPE, ServerboundRequestRulesPayload.STREAM_CODEC,

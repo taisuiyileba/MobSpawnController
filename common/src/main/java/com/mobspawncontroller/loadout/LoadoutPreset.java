@@ -10,7 +10,7 @@ import java.util.Map;
 
 /**
  * One weighted equipment/NBT preset of a mob loadout.
- * Empty source lists and null day bounds mean that the condition is unrestricted.
+ * An empty allowlist matches every known source. Unknown sources require explicit inclusion.
  */
 public record LoadoutPreset(String name, int weight, List<String> sources, List<String> excludedSources,
                             Integer minDay, Integer maxDay, Map<EquipmentSlot, LoadoutSlotRule> slots,
@@ -50,7 +50,9 @@ public record LoadoutPreset(String name, int weight, List<String> sources, List<
     }
 
     public boolean matches(String source, long day) {
-        return (sources.isEmpty() || sources.contains(source))
+        boolean allowedSource = sources.contains(source)
+                || (sources.isEmpty() && !LoadoutSources.UNKNOWN.equals(source));
+        return allowedSource
                 && !excludedSources.contains(source)
                 && (minDay == null || day >= minDay)
                 && (maxDay == null || day <= maxDay);

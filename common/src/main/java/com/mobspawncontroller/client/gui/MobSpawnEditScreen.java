@@ -22,6 +22,7 @@ import com.mobspawncontroller.platform.NetworkBridge;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import io.netty.buffer.Unpooled;
 import net.minecraft.ChatFormatting;
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -63,6 +64,7 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
     private static final int FOOTER_HEIGHT = 30;
     private static final int PANEL_INSET = 8;
     private static final int TAB_HEIGHT = 16;
+    private static final long CARET_BLINK_INTERVAL_MS = 300L;
     private static final int ACCENT_COLOR = 0xFF63B3ED;
     private static final int PANEL_BG = 0xF015171B;
     private static final int HEADER_BG = 0xAA202630;
@@ -265,6 +267,7 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
     private ResourceLocation focusedAttributeId = null;
     private String focusedNaturalField = null;
     private String focusedActiveField = null;
+    private long caretBlinkStart;
     private Button cancelButton;
     private Button saveButton;
     private DetailTab activeTab = DetailTab.SPAWN_RULES;
@@ -456,8 +459,11 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
         naturalInputs.clear();
         naturalSelectorModes.clear();
         naturalSelections.clear();
-        loadSelector("spawn_type_list", spawnTypeStrings(settings.spawnTypes()),
-                spawnTypeStrings(settings.excludedSpawnTypes()));
+        List<String> includedTypes = new ArrayList<>(spawnTypeStrings(settings.spawnTypes()));
+        List<String> excludedTypes = new ArrayList<>(spawnTypeStrings(settings.excludedSpawnTypes()));
+        if (settings.includeUnknownSpawns()) includedTypes.add("unknown");
+        if (settings.excludeUnknownSpawns()) excludedTypes.add("unknown");
+        loadSelector("spawn_type_list", includedTypes, excludedTypes);
         naturalInputs.put("spawn_multiplier", formatNaturalNumber(settings.spawnMultiplier()));
         naturalInputs.put("chance", formatNaturalNumber(settings.chance() * 100.0));
         putNatural("min_height", settings.minHeight());
@@ -616,7 +622,9 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
                 selectedStrings("block_above_list", SelectorMode.WHITELIST),
                 selectedStrings("block_above_list", SelectorMode.BLACKLIST),
                 selectedSpawnTypes("spawn_type_list", SelectorMode.WHITELIST),
-                selectedSpawnTypes("spawn_type_list", SelectorMode.BLACKLIST));
+                selectedSpawnTypes("spawn_type_list", SelectorMode.BLACKLIST),
+                naturalSelection("spawn_type_list", SelectorMode.WHITELIST).contains("unknown"),
+                naturalSelection("spawn_type_list", SelectorMode.BLACKLIST).contains("unknown"));
     }
 
     private ActiveSpawnSettings collectActiveSettings() {
@@ -1296,21 +1304,14 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
             int border = focused ? ACCENT_COLOR : hovered ? 0xFF64748B : 0xFF374151;
             guiGraphics.fill(inputX, inputY, inputX + NATURAL_INPUT_W, inputY + 18, 0xFF111827);
             guiGraphics.renderOutline(inputX, inputY, NATURAL_INPUT_W, 18, border);
-            String value = cycle ? naturalCycleLabel(field.key())
-                    : naturalInputs.getOrDefault(field.key(), "");
-            String shown = value.isEmpty()
-                    ? Component.translatable("gui.mobspawncontroller.natural.unlimited").getString() : value;
-            int color = value.isEmpty() ? 0xFF6B7280 : 0xFFE5E7EB;
             if (cycle) {
                 renderNaturalCycleControl(guiGraphics, field.key(), inputX, inputY, mouseX, mouseY);
             } else {
-                guiGraphics.drawString(font, trimToWidth(shown, NATURAL_INPUT_W - 8),
-                        inputX + 4, inputY + 5, color);
-                if (focused && System.currentTimeMillis() / 500L % 2L == 0L) {
-                    int cursorX = inputX + 4 + font.width(trimToWidth(value, NATURAL_INPUT_W - 10));
-                    guiGraphics.fill(Math.min(cursorX, inputX + NATURAL_INPUT_W - 4), inputY + 4,
-                            Math.min(cursorX + 1, inputX + NATURAL_INPUT_W - 3), inputY + 14, 0xFFFFFFFF);
-                }
+                String value = naturalInputs.getOrDefault(field.key(), "");
+                String placeholder = value.isEmpty()
+                        ? Component.translatable("gui.mobspawncontroller.natural.unlimited").getString() : "";
+                renderInputText(guiGraphics, value, placeholder, inputX + 4, inputY + 5,
+                        NATURAL_INPUT_W - 8, 0xFFE5E7EB, focused);
             }
         }
     }
@@ -1334,13 +1335,7 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
         graphics.fill(x, y, x + width, y + 18, 0xFF111827);
         graphics.renderOutline(x, y, width, 18, focused ? ACCENT_COLOR : hovered ? 0xFF64748B : 0xFF374151);
         String value = naturalInputs.getOrDefault(inputKey, "");
-        String shown = value.isEmpty() ? placeholder : value;
-        graphics.drawString(font, trimToWidth(shown, width - 8), x + 4, y + 5,
-                value.isEmpty() ? 0xFF6B7280 : 0xFFE5E7EB);
-        if (focused && System.currentTimeMillis() / 500L % 2L == 0L) {
-            int cursorX = Math.min(x + width - 4, x + 4 + font.width(trimToWidth(value, width - 9)));
-            graphics.fill(cursorX, y + 4, cursorX + 1, y + 14, 0xFFFFFFFF);
-        }
+        renderInputText(graphics, value, placeholder, x + 4, y + 5, width - 8, 0xFFE5E7EB, focused);
     }
 
     private static String[] naturalRangeKeys(String key) {
@@ -1486,14 +1481,10 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
         graphics.fill(x, y, x + width, y + 18, 0xFF111827);
         graphics.renderOutline(x, y, width, 18, focused ? ACCENT_COLOR : hovered ? 0xFF64748B : 0xFF374151);
         String value = activeInputs.getOrDefault(key, "");
-        String shown = value.isEmpty() ? (placeholder.isEmpty()
-                ? Component.translatable("gui.mobspawncontroller.natural.unlimited").getString() : placeholder) : value;
-        graphics.drawString(font, trimToWidth(shown, width - 8), x + 4, y + 5,
-                value.isEmpty() ? 0xFF6B7280 : 0xFFE5E7EB);
-        if (focused && System.currentTimeMillis() / 500L % 2L == 0L) {
-            int cursorX = Math.min(x + width - 4, x + 4 + font.width(trimToWidth(value, width - 9)));
-            graphics.fill(cursorX, y + 4, cursorX + 1, y + 14, 0xFFFFFFFF);
+        if (value.isEmpty() && placeholder.isEmpty()) {
+            placeholder = Component.translatable("gui.mobspawncontroller.natural.unlimited").getString();
         }
+        renderInputText(graphics, value, placeholder, x + 4, y + 5, width - 8, 0xFFE5E7EB, focused);
     }
 
     private static String[] activeRangeKeys(String key) {
@@ -1613,14 +1604,8 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
         graphics.fill(inputX, inputY, inputX + LOADOUT_CHANCE_W, inputY + 18, 0xFF111827);
         graphics.renderOutline(inputX, inputY, LOADOUT_CHANCE_W, 18, loadoutChanceFocused ? ACCENT_COLOR
                 : !valid ? 0xFFEF4444 : inputHovered ? 0xFF64748B : 0xFF374151);
-        String shown = loadoutChanceInput.isEmpty() ? "100" : loadoutChanceInput;
-        graphics.drawString(font, trimToWidth(shown, LOADOUT_CHANCE_W - 8), inputX + 4, inputY + 5,
-                loadoutChanceInput.isEmpty() ? 0xFF6B7280 : 0xFFE5E7EB);
-        if (loadoutChanceFocused && System.currentTimeMillis() / 500L % 2L == 0L) {
-            int cursorX = Math.min(inputX + LOADOUT_CHANCE_W - 4,
-                    inputX + 4 + font.width(trimToWidth(loadoutChanceInput, LOADOUT_CHANCE_W - 9)));
-            graphics.fill(cursorX, inputY + 4, cursorX + 1, inputY + 14, 0xFFFFFFFF);
-        }
+        renderInputText(graphics, loadoutChanceInput, "100", inputX + 4, inputY + 5,
+                LOADOUT_CHANCE_W - 8, 0xFFE5E7EB, loadoutChanceFocused);
         graphics.drawString(font, "%", inputX + LOADOUT_CHANCE_W + 4, inputY + 5, 0xFF94A3B8);
     }
 
@@ -1968,8 +1953,8 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
                 focused ? ACCENT_COLOR : valid ? 0xFF4B5563 : 0xFFEF4444);
         String suffix = control.type() == MobAttributeControl.ControlType.PERCENT ? "%" : "";
         int suffixWidth = suffix.isEmpty() ? 0 : font.width(suffix) + 2;
-        guiGraphics.drawString(this.font, trimToWidth(valueText, ATTRIBUTE_INPUT_W - suffixWidth - 8),
-                x + 4, y + (18 - font.lineHeight) / 2, valid ? 0xFFE5E7EB : 0xFFFFB4B4);
+        renderInputText(guiGraphics, valueText, "", x + 4, y + (18 - font.lineHeight) / 2,
+                ATTRIBUTE_INPUT_W - suffixWidth - 8, valid ? 0xFFE5E7EB : 0xFFFFB4B4, focused);
         if (!suffix.isEmpty()) {
             guiGraphics.drawString(this.font, suffix, x + ATTRIBUTE_INPUT_W - suffixWidth,
                     y + (18 - font.lineHeight) / 2, 0xFF94A3B8);
@@ -2037,6 +2022,18 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
         return (alpha << 24) | (red << 16) | (green << 8) | blue;
     }
 
+    private void renderInputText(GuiGraphics graphics, String value, String placeholder, int x, int y,
+                                 int width, int color, boolean focused) {
+        boolean showingPlaceholder = value.isEmpty() && !focused;
+        String visibleText = focused ? font.plainSubstrByWidth(value, width - 1, true)
+                : trimToWidth(showingPlaceholder ? placeholder : value, width);
+        graphics.drawString(font, visibleText, x, y, showingPlaceholder ? 0xFF6B7280 : color);
+        if (focused && (Util.getMillis() - caretBlinkStart) / CARET_BLINK_INTERVAL_MS % 2 == 0) {
+            int caretX = x + font.width(visibleText);
+            graphics.fill(caretX, y - 1, caretX + 1, y + font.lineHeight, 0xFFFFFFFF);
+        }
+    }
+
     private String trimToWidth(String text, int maxWidth) {
         if (maxWidth <= 0 || text == null || text.isEmpty()) {
             return "";
@@ -2092,6 +2089,7 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        caretBlinkStart = Util.getMillis();
         if (super.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
@@ -2378,6 +2376,8 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
         Minecraft mc = Minecraft.getInstance();
         List<NaturalRegistryPickerScreen.Option> options = new ArrayList<>();
         if (key.equals("spawn_type_list")) {
+            options.add(new NaturalRegistryPickerScreen.Option("unknown",
+                    Component.translatable("gui.mobspawncontroller.spawntype.unknown").getString()));
             for (MobSpawnType spawnType : MobSpawnType.values()) {
                 String value = spawnType.name().toLowerCase(Locale.ROOT);
                 String label = Component.translatable("gui.mobspawncontroller.spawntype." + value).getString();
@@ -2639,6 +2639,7 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
+        caretBlinkStart = Util.getMillis();
         if (loadoutChanceFocused && isNumericInputChar(codePoint)) {
             if (loadoutChanceInput.length() < 16) loadoutChanceInput += codePoint;
             return true;
@@ -2664,6 +2665,7 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        caretBlinkStart = Util.getMillis();
         if (loadoutChanceFocused) {
             if (Screen.isPaste(keyCode)) {
                 String pasted = Minecraft.getInstance().keyboardHandler.getClipboard().chars()

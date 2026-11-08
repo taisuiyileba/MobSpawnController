@@ -55,6 +55,50 @@ class NaturalSpawnSettingsTest {
         NaturalSpawnSettings unrestricted = NaturalSpawnSettingsJsonCodec.decode(unrestrictedJson);
         assertTrue(unrestricted.appliesTo(MobSpawnType.NATURAL));
         assertTrue(unrestricted.appliesTo(MobSpawnType.COMMAND));
+        assertFalse(legacy.appliesTo(null));
+        assertFalse(unrestricted.appliesTo(null));
+    }
+
+    @Test
+    void unknownOnlySelectionDoesNotBecomeAllKnownTypes() {
+        JsonObject json = new JsonObject();
+        JsonArray types = new JsonArray();
+        types.add("unknown");
+        json.add("spawn_types", types);
+        NaturalSpawnSettings settings = NaturalSpawnSettingsJsonCodec.decode(json);
+
+        assertTrue(settings.appliesTo(null));
+        for (MobSpawnType type : MobSpawnType.values()) assertFalse(settings.appliesTo(type));
+        assertEquals(json, NaturalSpawnSettingsJsonCodec.encode(settings));
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            settings.write(buffer);
+            assertEquals(settings, NaturalSpawnSettings.read(buffer));
+            assertEquals(0, buffer.readableBytes());
+        } finally {
+            buffer.release();
+        }
+    }
+
+    @Test
+    void unknownSelectionSupportsMixedWhitelistAndBlacklistPrecedence() {
+        JsonObject json = new JsonObject();
+        JsonArray types = new JsonArray();
+        types.add("natural");
+        types.add("unknown");
+        json.add("spawn_types", types);
+        NaturalSpawnSettings mixed = NaturalSpawnSettingsJsonCodec.decode(json);
+        assertTrue(mixed.appliesTo(null));
+        assertTrue(mixed.appliesTo(MobSpawnType.NATURAL));
+        assertFalse(mixed.appliesTo(MobSpawnType.COMMAND));
+
+        JsonArray excluded = new JsonArray();
+        excluded.add("unknown");
+        json.add("excluded_spawn_types", excluded);
+        NaturalSpawnSettings denied = NaturalSpawnSettingsJsonCodec.decode(json);
+        assertFalse(denied.appliesTo(null));
+        assertTrue(denied.appliesTo(MobSpawnType.NATURAL));
+        assertEquals(json, NaturalSpawnSettingsJsonCodec.encode(denied));
     }
 
     @Test
@@ -75,7 +119,7 @@ class NaturalSpawnSettingsTest {
                 -1, -2, -3, -10.0,
                 -1, 99, -2, 88,
                 null, null, null, null,
-                null, null);
+                null, null, false, false);
 
         assertEquals(1.0, normalized.chance());
         assertEquals(16.0, normalized.spawnMultiplier());
@@ -132,7 +176,7 @@ class NaturalSpawnSettingsTest {
                 List.of("minecraft:stone"),
                 List.of("#minecraft:leaves"),
                 List.of(MobSpawnType.NATURAL, MobSpawnType.COMMAND),
-                List.of(MobSpawnType.SPAWNER));
+                List.of(MobSpawnType.SPAWNER), true, true);
     }
 
     private static ResourceLocation id(String namespace, String path) {
