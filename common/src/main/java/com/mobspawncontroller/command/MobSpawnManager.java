@@ -180,17 +180,14 @@ public final class MobSpawnManager {
 
     /** Queues one attribute write for a newly accepted mob. */
     public static void queueAttributeOverrides(Mob mob, boolean preservePartialHealth) {
-        PendingAttributesHolder holder = (PendingAttributesHolder) mob;
-        if (holder.mobspawncontroller$getAttributeState() == State.APPLIED) {
-            return;
-        }
         ResourceLocation mobId = BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType());
         if (ATTRIBUTE_OVERRIDES.containsKey(mobId)) {
+            PendingAttributesHolder holder = (PendingAttributesHolder) mob;
             holder.mobspawncontroller$setAttributeState(preservePartialHealth ? State.PENDING_PRESERVE_HEALTH : State.PENDING);
         }
     }
 
-    /** Runs before joining/serialization, or on the first tick if initialization happened after joining. */
+    /** Runs before joining or serialization, or before the next tick for overrides queued after joining. */
     public static void applyPendingAttributeOverrides(Entity entity) {
         if (!(entity instanceof Mob mob)) {
             return;
@@ -200,7 +197,7 @@ public final class MobSpawnManager {
         if (!state.isPending()) {
             return;
         }
-        holder.mobspawncontroller$setAttributeState(State.APPLIED);
+        holder.mobspawncontroller$setAttributeState(State.NONE);
         applyAttributeOverrides(mob, state == State.PENDING_PRESERVE_HEALTH);
     }
 

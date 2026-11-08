@@ -17,9 +17,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Applies loadouts in two steps. A preset is chosen when the spawn is accepted, which happens before
- * {@code finalizeSpawn} runs; vanilla subclasses hand out their random equipment after that, so the preset
- * is only written once the mob joins a level (or on its first tick when finalizeSpawn ran after joining).
+ * Chooses a preset when the spawn is accepted. Applies it after spawn initialization before joining,
+ * or before the next tick if it was queued after joining.
  */
 public final class LoadoutApplier {
 
@@ -28,7 +27,6 @@ public final class LoadoutApplier {
 
     public static void prepare(Mob mob, MobSpawnType spawnType, boolean extraSpawn) {
         PendingLoadoutHolder holder = (PendingLoadoutHolder) mob;
-        if (holder.mobspawncontroller$hasAppliedLoadout()) return;
         holder.mobspawncontroller$setPendingLoadout(null);
         ResourceLocation mobId = BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType());
         MobLoadout loadout = MobSpawnManager.getLoadoutOrNull(mobId);
@@ -65,7 +63,6 @@ public final class LoadoutApplier {
         LoadoutPreset preset = holder.mobspawncontroller$getPendingLoadout();
         if (preset == null) return;
         holder.mobspawncontroller$setPendingLoadout(null);
-        holder.mobspawncontroller$markLoadoutApplied();
         try {
             apply(mob, preset);
         } catch (RuntimeException exception) {

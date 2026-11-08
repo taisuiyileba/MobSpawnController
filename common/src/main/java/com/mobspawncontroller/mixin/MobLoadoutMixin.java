@@ -14,9 +14,6 @@ public abstract class MobLoadoutMixin implements PendingLoadoutHolder, PendingAt
     private LoadoutPreset mobspawncontroller$pendingLoadout;
 
     @Unique
-    private boolean mobspawncontroller$loadoutApplied;
-
-    @Unique
     private State mobspawncontroller$attributeState = State.NONE;
 
     @Override
@@ -37,15 +34,5 @@ public abstract class MobLoadoutMixin implements PendingLoadoutHolder, PendingAt
     @Override
     public void mobspawncontroller$setPendingLoadout(LoadoutPreset preset) {
         mobspawncontroller$pendingLoadout = preset;
-    }
-
-    @Override
-    public boolean mobspawncontroller$hasAppliedLoadout() {
-        return mobspawncontroller$loadoutApplied;
-    }
-
-    @Override
-    public void mobspawncontroller$markLoadoutApplied() {
-        mobspawncontroller$loadoutApplied = true;
     }
 }
