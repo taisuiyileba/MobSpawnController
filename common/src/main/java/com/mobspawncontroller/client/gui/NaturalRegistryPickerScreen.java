@@ -102,6 +102,12 @@ public class NaturalRegistryPickerScreen extends Screen {
     }
 
     @Override
+    public void tick() {
+        super.tick();
+        searchBox.tick();
+    }
+
+    @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         renderBackground(graphics);
         graphics.fill(panelLeft, panelTop, panelRight, panelBottom, PANEL_BG);

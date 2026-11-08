@@ -271,6 +271,12 @@ public class BlockIdListEditScreen extends Screen {
     }
 
     @Override
+    public void tick() {
+        super.tick();
+        editBoxes.forEach(EditBox::tick);
+    }
+
+    @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         renderBackground(graphics);
         renderPanel(graphics);

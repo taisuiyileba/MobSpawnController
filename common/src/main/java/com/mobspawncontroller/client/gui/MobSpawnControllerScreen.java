@@ -308,6 +308,12 @@ public class MobSpawnControllerScreen extends Screen implements ClientRuleSync.R
     }
 
     @Override
+    public void tick() {
+        super.tick();
+        searchBox.tick();
+    }
+
+    @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         this.renderBackground(guiGraphics);
         renderPanel(guiGraphics);

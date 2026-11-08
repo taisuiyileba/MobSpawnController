@@ -10,7 +10,22 @@
     "LocalMobCapMixin",
     "MobLoadoutMixin",
     "ServerLevelLoadoutMixin",
-    "WorldGenRegionLoadoutMixin"
+    "ServerLevelSpawnMixin",
+    "WorldGenRegionSpawnMixin",
+    "source.AllayDuplicationMixin",
+    "source.AnimalBreedingMixin",
+    "source.BaseSpawnerMixin",
+    "source.FoxBreedingMixin",
+    "source.FrogspawnBlockMixin",
+    "source.MobConversionMixin",
+    "source.MushroomCowConversionMixin",
+    "source.PigConversionMixin",
+    "source.ShulkerDuplicationMixin",
+    "source.SnifferEggBlockMixin",
+    "source.SpawnEggItemMixin",
+    "source.SummonCommandMixin",
+    "source.ThrownEggMixin",
+    "source.TurtleEggBlockMixin"
   ],
   "injectors": {
     "defaultRequire": 1

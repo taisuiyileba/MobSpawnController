@@ -1,0 +1,185 @@
+package com.mobspawncontroller.natural;
+
+import com.google.gson.JsonObject;
+import com.google.gson.JsonArray;
+import io.netty.buffer.Unpooled;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.MobSpawnType;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class NaturalSpawnSettingsTest {
+
+    @Test
+    void defaultsRoundTripThroughJson() {
+        NaturalSpawnSettings defaults = NaturalSpawnSettings.defaults();
+
+        JsonObject encoded = NaturalSpawnSettingsJsonCodec.encode(defaults);
+
+        assertEquals(1, encoded.size());
+        assertTrue(encoded.has("spawn_types"));
+        assertEquals(defaults, NaturalSpawnSettingsJsonCodec.decode(encoded));
+    }
+
+    @Test
+    void allFieldsRoundTripThroughJsonAndNetwork() {
+        NaturalSpawnSettings settings = comprehensiveSettings();
+
+        assertEquals(settings, NaturalSpawnSettingsJsonCodec.decode(
+                NaturalSpawnSettingsJsonCodec.encode(settings)));
+
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            settings.write(buffer);
+            assertEquals(settings, NaturalSpawnSettings.read(buffer));
+            assertEquals(0, buffer.readableBytes());
+        } finally {
+            buffer.release();
+        }
+    }
+
+    @Test
+    void spawnTypeFilterKeepsLegacyNaturalDefaultAndSupportsAllTypes() {
+        NaturalSpawnSettings legacy = NaturalSpawnSettingsJsonCodec.decode(new JsonObject());
+        assertTrue(legacy.appliesTo(MobSpawnType.NATURAL));
+        assertFalse(legacy.appliesTo(MobSpawnType.COMMAND));
+
+        JsonObject unrestrictedJson = new JsonObject();
+        unrestrictedJson.add("spawn_types", new JsonArray());
+        NaturalSpawnSettings unrestricted = NaturalSpawnSettingsJsonCodec.decode(unrestrictedJson);
+        assertTrue(unrestricted.appliesTo(MobSpawnType.NATURAL));
+        assertTrue(unrestricted.appliesTo(MobSpawnType.COMMAND));
+        assertFalse(legacy.appliesTo(null));
+        assertFalse(unrestricted.appliesTo(null));
+    }
+
+    @Test
+    void unknownOnlySelectionDoesNotBecomeAllKnownTypes() {
+        JsonObject json = new JsonObject();
+        JsonArray types = new JsonArray();
+        types.add("unknown");
+        json.add("spawn_types", types);
+        NaturalSpawnSettings settings = NaturalSpawnSettingsJsonCodec.decode(json);
+
+        assertTrue(settings.appliesTo(null));
+        for (MobSpawnType type : MobSpawnType.values()) assertFalse(settings.appliesTo(type));
+        assertEquals(json, NaturalSpawnSettingsJsonCodec.encode(settings));
+        FriendlyByteBuf buffer = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            settings.write(buffer);
+            assertEquals(settings, NaturalSpawnSettings.read(buffer));
+            assertEquals(0, buffer.readableBytes());
+        } finally {
+            buffer.release();
+        }
+    }
+
+    @Test
+    void unknownSelectionSupportsMixedWhitelistAndBlacklistPrecedence() {
+        JsonObject json = new JsonObject();
+        JsonArray types = new JsonArray();
+        types.add("natural");
+        types.add("unknown");
+        json.add("spawn_types", types);
+        NaturalSpawnSettings mixed = NaturalSpawnSettingsJsonCodec.decode(json);
+        assertTrue(mixed.appliesTo(null));
+        assertTrue(mixed.appliesTo(MobSpawnType.NATURAL));
+        assertFalse(mixed.appliesTo(MobSpawnType.COMMAND));
+
+        JsonArray excluded = new JsonArray();
+        excluded.add("unknown");
+        json.add("excluded_spawn_types", excluded);
+        NaturalSpawnSettings denied = NaturalSpawnSettingsJsonCodec.decode(json);
+        assertFalse(denied.appliesTo(null));
+        assertTrue(denied.appliesTo(MobSpawnType.NATURAL));
+        assertEquals(json, NaturalSpawnSettingsJsonCodec.encode(denied));
+    }
+
+    @Test
+    void constructorNormalizesLegacySeasonsAndUnsafeBounds() {
+        NaturalSpawnSettings defaults = NaturalSpawnSettings.defaults();
+        NaturalSpawnSettings normalized = new NaturalSpawnSettings(
+                2.0, 99.0,
+                defaults.minHeight(), defaults.maxHeight(),
+                -4, 50,
+                defaults.minTime(), defaults.maxTime(),
+                -1, -2,
+                List.of(-1, 2, 2, 8), List.of(7),
+                -1.0, -2.0, -3.0, -4.0, -5.0, -6.0,
+                null, null, null, null, null,
+                null, null, null, null, null, null,
+                List.of("spring", "MID_WINTER", "invalid"), List.of("autumn"),
+                null, null, null, null,
+                -1, -2, -3, -10.0,
+                -1, 99, -2, 88,
+                null, null, null, null,
+                null, null, false, false);
+
+        assertEquals(1.0, normalized.chance());
+        assertEquals(16.0, normalized.spawnMultiplier());
+        assertEquals(0, normalized.minTotalLight());
+        assertEquals(15, normalized.maxTotalLight());
+        assertEquals(0, normalized.minDay());
+        assertEquals(List.of(2), normalized.moonPhases());
+        assertEquals(List.of("early_spring", "mid_spring", "late_spring", "mid_winter"),
+                normalized.seasons());
+        assertEquals(List.of("early_autumn", "mid_autumn", "late_autumn"),
+                normalized.excludedSeasons());
+        assertEquals(0.0, normalized.minPlayerDistance());
+        assertEquals(0, normalized.maxNearby());
+        assertEquals(1.0, normalized.nearbyRadius());
+        assertEquals(0, normalized.minSkyLight());
+        assertEquals(15, normalized.maxSkyLight());
+        assertTrue(normalized.spawnTypes().isEmpty());
+    }
+
+    private static NaturalSpawnSettings comprehensiveSettings() {
+        return new NaturalSpawnSettings(
+                0.375, 3.5,
+                -32, 180,
+                1, 12,
+                18000, 6000,
+                2, 42,
+                List.of(0, 3, 7), List.of(2, 5),
+                12.5, 96.0,
+                24.0, 1024.0,
+                1.25, 4.5,
+                NaturalSpawnSettings.WeatherMode.THUNDER,
+                NaturalSpawnSettings.DifficultyMode.HARD,
+                NaturalSpawnSettings.SkyMode.MUST_NOT_SEE,
+                NaturalSpawnSettings.FluidMode.WATER,
+                NaturalSpawnSettings.SlimeChunkMode.MUST_NOT,
+                List.of(id("minecraft", "overworld")),
+                List.of(id("minecraft", "the_end")),
+                List.of(id("minecraft", "plains")),
+                List.of(id("minecraft", "desert")),
+                List.of(id("minecraft", "is_overworld")),
+                List.of(id("minecraft", "is_badlands")),
+                List.of("early_spring", "late_winter"),
+                List.of("mid_summer"),
+                List.of("minecraft:village_plains", "#minecraft:village", "*"),
+                List.of("minecraft:ancient_city"),
+                List.of("minecraft:grass_block", "#minecraft:logs"),
+                List.of("minecraft:magma_block"),
+                1, 8,
+                5, 24.5,
+                0, 15,
+                1, 10,
+                List.of("minecraft:air"),
+                List.of("minecraft:water"),
+                List.of("minecraft:stone"),
+                List.of("#minecraft:leaves"),
+                List.of(MobSpawnType.NATURAL, MobSpawnType.COMMAND),
+                List.of(MobSpawnType.SPAWNER), true, true);
+    }
+
+    private static ResourceLocation id(String namespace, String path) {
+        return new ResourceLocation(namespace, path);
+    }
+}

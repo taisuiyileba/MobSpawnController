@@ -7,8 +7,9 @@ import com.google.gson.JsonObject;
 import com.mobspawncontroller.MobSpawnController;
 import com.mobspawncontroller.active.ActiveSpawnSettings;
 import com.mobspawncontroller.active.ActiveSpawnSettingsJsonCodec;
+import com.mobspawncontroller.attribute.PendingAttributesHolder;
+import com.mobspawncontroller.attribute.PendingAttributesHolder.State;
 import com.mobspawncontroller.compat.SereneSeasonsCompat;
-import com.mobspawncontroller.loadout.LoadoutApplier;
 import com.mobspawncontroller.loadout.LoadoutParsing;
 import com.mobspawncontroller.loadout.MobLoadout;
 import com.mobspawncontroller.loadout.MobLoadoutJsonCodec;
@@ -70,8 +71,9 @@ public final class MobSpawnManager {
     private static final String LEGACY_SPAWN_RESTRICTIONS_KEY = "spawn_restrictions";
     private static final String EXTRA_SPAWN_KEY = "extra_spawn";
     private static final String LOADOUT_KEY = "loadout";
+    private static final int SPAWN_TYPE_COUNT = MobSpawnType.values().length;
     private static final Map<ResourceLocation, EnumMap<MobSpawnType, Boolean>> RULES = new HashMap<>();
-    private static final Map<ResourceLocation, Map<ResourceLocation, Double>> ATTRIBUTE_OVERRIDES = new HashMap<>();
+    private static final Map<ResourceLocation, Map<ResourceLocation, Double>> ATTRIBUTE_OVERRIDES = new ConcurrentHashMap<>();
     private static final Map<ResourceLocation, NaturalSpawnSettings> NATURAL_SPAWN_SETTINGS = new HashMap<>();
     private static final Map<ResourceLocation, ActiveSpawnSettings> ACTIVE_SPAWN_SETTINGS = new HashMap<>();
     // Read from world-generation threads when structure mobs spawn, so it must tolerate concurrent access.
@@ -176,10 +178,30 @@ public final class MobSpawnManager {
         }
     }
 
-    /** Runs for every spawn that passed the rules: attribute overrides now, loadout once finalizeSpawn is done. */
-    public static void onSpawnAccepted(Mob mob, MobSpawnType spawnType, boolean extraSpawn) {
-        applyAttributeOverrides(mob);
-        LoadoutApplier.prepare(mob, spawnType, extraSpawn);
+    /** Queues one attribute write for a newly accepted mob. */
+    public static void queueAttributeOverrides(Mob mob, boolean preservePartialHealth) {
+        PendingAttributesHolder holder = (PendingAttributesHolder) mob;
+        if (holder.mobspawncontroller$getAttributeState() == State.APPLIED) {
+            return;
+        }
+        ResourceLocation mobId = BuiltInRegistries.ENTITY_TYPE.getKey(mob.getType());
+        if (ATTRIBUTE_OVERRIDES.containsKey(mobId)) {
+            holder.mobspawncontroller$setAttributeState(preservePartialHealth ? State.PENDING_PRESERVE_HEALTH : State.PENDING);
+        }
+    }
+
+    /** Runs before joining/serialization, or on the first tick if initialization happened after joining. */
+    public static void applyPendingAttributeOverrides(Entity entity) {
+        if (!(entity instanceof Mob mob)) {
+            return;
+        }
+        PendingAttributesHolder holder = (PendingAttributesHolder) mob;
+        State state = holder.mobspawncontroller$getAttributeState();
+        if (!state.isPending()) {
+            return;
+        }
+        holder.mobspawncontroller$setAttributeState(State.APPLIED);
+        applyAttributeOverrides(mob, state == State.PENDING_PRESERVE_HEALTH);
     }
 
     public static void setAttributeOverrides(ResourceLocation mobId, Map<ResourceLocation, Double> attributes) {
@@ -191,23 +213,32 @@ public final class MobSpawnManager {
     }
 
     public static void applyAttributeOverrides(LivingEntity entity) {
-        ResourceLocation mobId = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+        applyAttributeOverrides(entity, false);
+    }
+
+    private static void applyAttributeOverrides(LivingEntity entity, boolean preservePartialHealth) {
+        ResourceLocation mobId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         Map<ResourceLocation, Double> attributes = ATTRIBUTE_OVERRIDES.get(mobId);
         if (attributes == null || attributes.isEmpty()) {
             return;
         }
 
+        ResourceLocation maxHealthId = BuiltInRegistries.ATTRIBUTE.getKey(Attributes.MAX_HEALTH);
+        boolean updateHealth = attributes.containsKey(maxHealthId) && entity.isAlive()
+                && entity.getAttributes().hasAttribute(Attributes.MAX_HEALTH);
+        float healthBefore = updateHealth ? entity.getHealth() : 0;
+        boolean keepHealth = updateHealth && preservePartialHealth && healthBefore < entity.getMaxHealth();
+
         attributes.forEach((attributeId, value) -> {
-            Attribute attribute = net.minecraft.core.registries.BuiltInRegistries.ATTRIBUTE.get(attributeId);
+            Attribute attribute = BuiltInRegistries.ATTRIBUTE.get(attributeId);
             if (attribute != null) {
                 applyAttributeOverride(entity, attribute, value);
             }
         });
 
-        ResourceLocation maxHealthId = net.minecraft.core.registries.BuiltInRegistries.ATTRIBUTE
-                .getKey(Attributes.MAX_HEALTH);
-        if (attributes.containsKey(maxHealthId)) {
-            entity.setHealth(entity.getMaxHealth());
+        if (updateHealth) {
+            float maxHealth = entity.getMaxHealth();
+            entity.setHealth(keepHealth ? Math.min(healthBefore, maxHealth) : maxHealth);
         }
     }
 
@@ -421,146 +452,161 @@ public final class MobSpawnManager {
         return allowed == null || allowed;
     }
 
+    /** True when every spawn-type switch is off, which the GUI lists as disabled. */
+    public static boolean isFullyDisabled(Entity entity) {
+        return isFullyDisabled(BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()));
+    }
+
+    public static boolean isFullyDisabled(ResourceLocation mobId) {
+        EnumMap<MobSpawnType, Boolean> map = RULES.get(mobId);
+        return map != null && map.size() == SPAWN_TYPE_COUNT && !map.containsValue(Boolean.TRUE);
+    }
+
+    /** Unknown origins only use detailed conditions when the user explicitly selected them. */
+    public static boolean hasUnknownSpawnConditions(Entity entity) {
+        NaturalSpawnSettings settings = NATURAL_SPAWN_SETTINGS.get(BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()));
+        return settings != null && settings.appliesTo(null);
+    }
+
     /** Returns false when an applicable spawn fails one of the configured GUI conditions. */
     public static boolean isNaturalSpawnAllowed(Entity entity, ServerLevelAccessor level, MobSpawnType spawnType) {
-        ResourceLocation mobId = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+        ResourceLocation mobId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
         NaturalSpawnSettings settings = NATURAL_SPAWN_SETTINGS.get(mobId);
         if (settings == null || !settings.appliesTo(spawnType)) {
             return true;
         }
-
-        BlockPos pos = entity.blockPosition();
-        if (level.getRandom().nextDouble() >= settings.chance()) {
+        // Common deny-all rules need neither randomness nor any world queries.
+        if (settings.chance() <= 0.0 || (settings.chance() < 1.0
+                && level.getRandom().nextDouble() >= settings.chance())) {
             return false;
         }
+        if (settings.maxNearby() != null && settings.maxNearby() == 0) return false;
+
+        BlockPos pos = entity.blockPosition();
         if ((settings.minHeight() != null && pos.getY() < settings.minHeight())
                 || (settings.maxHeight() != null && pos.getY() > settings.maxHeight())) {
             return false;
         }
-        int totalLight = level.getMaxLocalRawBrightness(pos);
-        if ((settings.minTotalLight() != null && totalLight < settings.minTotalLight())
-                || (settings.maxTotalLight() != null && totalLight > settings.maxTotalLight())) {
-            return false;
-        }
-        int skyLight = level.getBrightness(net.minecraft.world.level.LightLayer.SKY, pos);
-        if ((settings.minSkyLight() != null && skyLight < settings.minSkyLight())
-                || (settings.maxSkyLight() != null && skyLight > settings.maxSkyLight())) {
-            return false;
-        }
-        int blockLight = level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, pos);
-        if ((settings.minBlockLight() != null && blockLight < settings.minBlockLight())
-                || (settings.maxBlockLight() != null && blockLight > settings.maxBlockLight())) {
-            return false;
-        }
 
         ServerLevel serverLevel = level.getLevel();
-        long absoluteTime = serverLevel.getDayTime();
-        long time = absoluteTime % 24000L;
-        long day = absoluteTime / 24000L;
-        int moonPhase = serverLevel.getMoonPhase();
-        if (!matchesTimeRange(time, settings.minTime(), settings.maxTime())
-                || (settings.minDay() != null && day < settings.minDay())
-                || (settings.maxDay() != null && day > settings.maxDay())
-                || (!settings.moonPhases().isEmpty() && !settings.moonPhases().contains(moonPhase))
-                || (!settings.excludedMoonPhases().isEmpty() && settings.excludedMoonPhases().contains(moonPhase))) {
-            return false;
-        }
-
-        Player nearest = level.getNearestPlayer(pos.getX(), pos.getY(), pos.getZ(), -1.0, false);
-        if (nearest == null) {
-            if (settings.maxPlayerDistance() != null) {
-                return false;
-            }
-        } else {
-            double distanceSquared = nearest.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
-            if ((settings.minPlayerDistance() != null
-                    && distanceSquared < settings.minPlayerDistance() * settings.minPlayerDistance())
-                    || (settings.maxPlayerDistance() != null
-                    && distanceSquared > settings.maxPlayerDistance() * settings.maxPlayerDistance())) {
-                return false;
-            }
-        }
-
-        double worldSpawnDistanceSquared = pos.distSqr(serverLevel.getSharedSpawnPos());
-        if ((settings.minWorldSpawnDistance() != null
-                && worldSpawnDistanceSquared < settings.minWorldSpawnDistance() * settings.minWorldSpawnDistance())
-                || (settings.maxWorldSpawnDistance() != null
-                && worldSpawnDistanceSquared > settings.maxWorldSpawnDistance() * settings.maxWorldSpawnDistance())) {
-            return false;
-        }
-        float localDifficulty = level.getCurrentDifficultyAt(pos).getEffectiveDifficulty();
-        if ((settings.minLocalDifficulty() != null && localDifficulty < settings.minLocalDifficulty())
-                || (settings.maxLocalDifficulty() != null && localDifficulty > settings.maxLocalDifficulty())) {
-            return false;
-        }
-
-        int playerCount = (int) serverLevel.players().stream().filter(player -> !player.isSpectator()).count();
-        if ((settings.minPlayers() != null && playerCount < settings.minPlayers())
-                || (settings.maxPlayers() != null && playerCount > settings.maxPlayers())) {
-            return false;
-        }
-
         ResourceLocation dimensionId = serverLevel.dimension().location();
-        if (!settings.dimensions().isEmpty()
-                && !settings.dimensions().contains(dimensionId)) {
+        if ((!settings.dimensions().isEmpty() && !settings.dimensions().contains(dimensionId))
+                || settings.excludedDimensions().contains(dimensionId)) {
             return false;
         }
-        if (settings.excludedDimensions().contains(dimensionId)) {
+        if (settings.minTime() != null || settings.maxTime() != null
+                || settings.minDay() != null || settings.maxDay() != null) {
+            long absoluteTime = serverLevel.getDayTime();
+            if (!matchesTimeRange(absoluteTime % 24000L, settings.minTime(), settings.maxTime())
+                    || (settings.minDay() != null && absoluteTime / 24000L < settings.minDay())
+                    || (settings.maxDay() != null && absoluteTime / 24000L > settings.maxDay())) {
+                return false;
+            }
+        }
+        if (!settings.moonPhases().isEmpty() || !settings.excludedMoonPhases().isEmpty()) {
+            int moonPhase = serverLevel.getMoonPhase();
+            if ((!settings.moonPhases().isEmpty() && !settings.moonPhases().contains(moonPhase))
+                    || settings.excludedMoonPhases().contains(moonPhase)) return false;
+        }
+        if ((settings.weather() != NaturalSpawnSettings.WeatherMode.ANY
+                && !matchesWeather(settings.weather(), serverLevel))
+                || (settings.difficulty() != NaturalSpawnSettings.DifficultyMode.ANY
+                && !matchesDifficulty(settings.difficulty(), level.getDifficulty()))) {
             return false;
         }
-        Holder<Biome> biome = level.getBiome(pos);
-        ResourceLocation biomeId = biome.unwrapKey().map(key -> key.location()).orElse(null);
-        boolean hasBiomeWhitelist = !settings.biomes().isEmpty() || !settings.biomeTags().isEmpty();
-        boolean matchesBiomeWhitelist = settings.biomes().contains(biomeId)
-                || matchesAnyTag(biome, settings.biomeTags(), Registries.BIOME);
-        if ((hasBiomeWhitelist && !matchesBiomeWhitelist)
-                || settings.excludedBiomes().contains(biomeId)
-                || matchesAnyTag(biome, settings.excludedBiomeTags(), Registries.BIOME)) {
+
+        if (settings.minTotalLight() != null || settings.maxTotalLight() != null) {
+            int light = level.getMaxLocalRawBrightness(pos);
+            if ((settings.minTotalLight() != null && light < settings.minTotalLight())
+                    || (settings.maxTotalLight() != null && light > settings.maxTotalLight())) return false;
+        }
+        if (settings.minSkyLight() != null || settings.maxSkyLight() != null) {
+            int light = level.getBrightness(net.minecraft.world.level.LightLayer.SKY, pos);
+            if ((settings.minSkyLight() != null && light < settings.minSkyLight())
+                    || (settings.maxSkyLight() != null && light > settings.maxSkyLight())) return false;
+        }
+        if (settings.minBlockLight() != null || settings.maxBlockLight() != null) {
+            int light = level.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, pos);
+            if ((settings.minBlockLight() != null && light < settings.minBlockLight())
+                    || (settings.maxBlockLight() != null && light > settings.maxBlockLight())) return false;
+        }
+
+        if (settings.minPlayerDistance() != null || settings.maxPlayerDistance() != null) {
+            Player nearest = level.getNearestPlayer(pos.getX(), pos.getY(), pos.getZ(), -1.0, false);
+            if (nearest == null) {
+                if (settings.maxPlayerDistance() != null) return false;
+            } else {
+                double distanceSquared = nearest.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+                if ((settings.minPlayerDistance() != null
+                        && distanceSquared < settings.minPlayerDistance() * settings.minPlayerDistance())
+                        || (settings.maxPlayerDistance() != null
+                        && distanceSquared > settings.maxPlayerDistance() * settings.maxPlayerDistance())) return false;
+            }
+        }
+        if (settings.minWorldSpawnDistance() != null || settings.maxWorldSpawnDistance() != null) {
+            double distanceSquared = pos.distSqr(serverLevel.getSharedSpawnPos());
+            if ((settings.minWorldSpawnDistance() != null
+                    && distanceSquared < settings.minWorldSpawnDistance() * settings.minWorldSpawnDistance())
+                    || (settings.maxWorldSpawnDistance() != null
+                    && distanceSquared > settings.maxWorldSpawnDistance() * settings.maxWorldSpawnDistance())) return false;
+        }
+        if (settings.minLocalDifficulty() != null || settings.maxLocalDifficulty() != null) {
+            float difficulty = level.getCurrentDifficultyAt(pos).getEffectiveDifficulty();
+            if ((settings.minLocalDifficulty() != null && difficulty < settings.minLocalDifficulty())
+                    || (settings.maxLocalDifficulty() != null && difficulty > settings.maxLocalDifficulty())) return false;
+        }
+        if (settings.minPlayers() != null || settings.maxPlayers() != null) {
+            long playerCount = serverLevel.players().stream().filter(player -> !player.isSpectator()).count();
+            if ((settings.minPlayers() != null && playerCount < settings.minPlayers())
+                    || (settings.maxPlayers() != null && playerCount > settings.maxPlayers())) return false;
+        }
+
+        if (!settings.biomes().isEmpty() || !settings.excludedBiomes().isEmpty()
+                || !settings.biomeTags().isEmpty() || !settings.excludedBiomeTags().isEmpty()) {
+            Holder<Biome> biome = level.getBiome(pos);
+            ResourceLocation biomeId = biome.unwrapKey().map(key -> key.location()).orElse(null);
+            boolean hasWhitelist = !settings.biomes().isEmpty() || !settings.biomeTags().isEmpty();
+            boolean matchesWhitelist = settings.biomes().contains(biomeId)
+                    || matchesAnyTag(biome, settings.biomeTags(), Registries.BIOME);
+            if ((hasWhitelist && !matchesWhitelist) || settings.excludedBiomes().contains(biomeId)
+                    || matchesAnyTag(biome, settings.excludedBiomeTags(), Registries.BIOME)) return false;
+        }
+        if (!SereneSeasonsCompat.isCurrentSeasonAllowed(serverLevel, settings.seasons(), settings.excludedSeasons())) {
             return false;
         }
-        if (!matchesWeather(settings.weather(), serverLevel)
-                || !matchesDifficulty(settings.difficulty(), level.getDifficulty())
-                || !SereneSeasonsCompat.isCurrentSeasonAllowed(serverLevel, settings.seasons(),
-                settings.excludedSeasons())) {
-            return false;
+        if (settings.skyMode() != NaturalSpawnSettings.SkyMode.ANY) {
+            boolean seesSky = level.canSeeSky(pos);
+            if ((settings.skyMode() == NaturalSpawnSettings.SkyMode.MUST_SEE && !seesSky)
+                    || (settings.skyMode() == NaturalSpawnSettings.SkyMode.MUST_NOT_SEE && seesSky)) return false;
         }
-        boolean seesSky = level.canSeeSky(pos);
-        if ((settings.skyMode() == NaturalSpawnSettings.SkyMode.MUST_SEE && !seesSky)
-                || (settings.skyMode() == NaturalSpawnSettings.SkyMode.MUST_NOT_SEE && seesSky)) {
-            return false;
-        }
-        if (!matchesFluid(settings.fluidMode(), level.getFluidState(pos))
-                || !matchesSlimeChunk(settings.slimeChunkMode(), serverLevel, pos)) {
-            return false;
-        }
+        if ((settings.fluidMode() != NaturalSpawnSettings.FluidMode.ANY
+                && !matchesFluid(settings.fluidMode(), level.getFluidState(pos)))
+                || !matchesSlimeChunk(settings.slimeChunkMode(), serverLevel, pos)) return false;
 
         if ((!settings.structures().isEmpty() && !matchesAnyStructure(serverLevel, pos, settings.structures()))
-                || matchesAnyStructure(serverLevel, pos, settings.excludedStructures())) {
-            return false;
-        }
-        BlockState below = level.getBlockState(pos.below());
-        if ((!settings.blocksBelow().isEmpty() && !matchesAnyBlock(below, settings.blocksBelow()))
-                || matchesAnyBlock(below, settings.excludedBlocksBelow())) {
-            return false;
-        }
-        BlockState at = level.getBlockState(pos);
-        if ((!settings.blocksAt().isEmpty() && !matchesAnyBlock(at, settings.blocksAt()))
-                || matchesAnyBlock(at, settings.excludedBlocksAt())) {
-            return false;
-        }
-        BlockState above = level.getBlockState(pos.above());
-        if ((!settings.blocksAbove().isEmpty() && !matchesAnyBlock(above, settings.blocksAbove()))
-                || matchesAnyBlock(above, settings.excludedBlocksAbove())) {
-            return false;
-        }
+                || (!settings.excludedStructures().isEmpty()
+                && matchesAnyStructure(serverLevel, pos, settings.excludedStructures()))) return false;
 
+        if (!settings.blocksBelow().isEmpty() || !settings.excludedBlocksBelow().isEmpty()) {
+            BlockState state = level.getBlockState(pos.below());
+            if ((!settings.blocksBelow().isEmpty() && !matchesAnyBlock(state, settings.blocksBelow()))
+                    || matchesAnyBlock(state, settings.excludedBlocksBelow())) return false;
+        }
+        if (!settings.blocksAt().isEmpty() || !settings.excludedBlocksAt().isEmpty()) {
+            BlockState state = level.getBlockState(pos);
+            if ((!settings.blocksAt().isEmpty() && !matchesAnyBlock(state, settings.blocksAt()))
+                    || matchesAnyBlock(state, settings.excludedBlocksAt())) return false;
+        }
+        if (!settings.blocksAbove().isEmpty() || !settings.excludedBlocksAbove().isEmpty()) {
+            BlockState state = level.getBlockState(pos.above());
+            if ((!settings.blocksAbove().isEmpty() && !matchesAnyBlock(state, settings.blocksAbove()))
+                    || matchesAnyBlock(state, settings.excludedBlocksAbove())) return false;
+        }
         if (settings.maxNearby() != null) {
             AABB area = new AABB(pos).inflate(settings.nearbyRadius());
             int nearby = serverLevel.getEntitiesOfClass(LivingEntity.class, area,
                     other -> other != entity && other.getType() == entity.getType()).size();
-            if (nearby >= settings.maxNearby()) {
-                return false;
-            }
+            if (nearby >= settings.maxNearby()) return false;
         }
         return true;
     }

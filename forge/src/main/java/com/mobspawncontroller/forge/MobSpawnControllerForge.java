@@ -33,6 +33,7 @@ import net.minecraftforge.event.entity.living.MobSpawnEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
 import net.minecraftforge.eventbus.api.Event;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.common.Mod;
@@ -50,7 +51,7 @@ import java.util.function.Supplier;
 @Mod(MobSpawnController.MOD_ID)
 public final class MobSpawnControllerForge {
 
-    private static final String PROTOCOL_VERSION = "11";
+    private static final String PROTOCOL_VERSION = "12";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             MobSpawnController.id("main"),
             () -> PROTOCOL_VERSION,
@@ -60,7 +61,6 @@ public final class MobSpawnControllerForge {
 
     public MobSpawnControllerForge(FMLJavaModLoadingContext loadingContext) {
         ModCompat.setModLoadedChecker(modId -> ModList.get().isLoaded(modId));
-        SpawnInterception.setPlatformHandlesFinalizeSpawn(true);
         MobSpawnController.setConfigDirectory(FMLPaths.CONFIGDIR.get());
         MobSpawnController.init();
         NetworkBridge.setToPlayerSender(MobSpawnControllerForge::sendToPlayer);
@@ -71,7 +71,9 @@ public final class MobSpawnControllerForge {
         MinecraftForge.EVENT_BUS.addListener(this::onServerStopping);
         MinecraftForge.EVENT_BUS.addListener(this::onRegisterCommands);
         MinecraftForge.EVENT_BUS.addListener(this::onSpawnPlacementCheck);
-        MinecraftForge.EVENT_BUS.addListener(this::onFinalizeSpawn);
+        // Cancelling this event only skips Mob#finalizeSpawn; the mob still spawns, so judge it regardless.
+        MinecraftForge.EVENT_BUS.addListener(EventPriority.NORMAL, true, MobSpawnEvent.FinalizeSpawn.class,
+                this::onFinalizeSpawn);
         MinecraftForge.EVENT_BUS.addListener(this::onLevelTick);
     }
 
@@ -206,14 +208,18 @@ public final class MobSpawnControllerForge {
     }
 
     private void onFinalizeSpawn(MobSpawnEvent.FinalizeSpawn event) {
-        if (SpawnInterception.isPrechecked(event.getEntity())) {
+        if (SpawnInterception.isSpawnChecked(event.getEntity())) {
             return;
         }
-        if (!MobSpawnManager.isSpawnAllowed(event.getEntity(), event.getLevel(), event.getSpawnType())) {
-            event.setSpawnCancelled(true);
-            return;
+        if (!SpawnInterception.checkBeforeFinalize(event.getEntity(), event.getLevel(), event.getSpawnType())) {
+            // Forge rejects setSpawnCancelled once the mob joined, which happens when finalizeSpawn runs late.
+            if (event.getEntity().isAddedToWorld()) {
+                event.getEntity().discard();
+                event.setCanceled(true);
+            } else {
+                event.setSpawnCancelled(true);
+            }
         }
-        MobSpawnManager.onSpawnAccepted(event.getEntity(), event.getSpawnType(), false);
     }
 
     private void onLevelTick(TickEvent.LevelTickEvent event) {

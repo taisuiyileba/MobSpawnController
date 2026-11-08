@@ -71,6 +71,11 @@ public final class NaturalSpawnSettingsJsonCodec {
         addStringList(json, "excluded_blocks_above", settings.excludedBlocksAbove());
         addEnumList(json, "spawn_types", settings.spawnTypes(), true);
         addEnumList(json, "excluded_spawn_types", settings.excludedSpawnTypes(), false);
+        if (settings.includeUnknownSpawns()) json.getAsJsonArray("spawn_types").add("unknown");
+        if (settings.excludeUnknownSpawns()) {
+            if (!json.has("excluded_spawn_types")) json.add("excluded_spawn_types", new JsonArray());
+            json.getAsJsonArray("excluded_spawn_types").add("unknown");
+        }
         return json;
     }
 
@@ -108,7 +113,9 @@ public final class NaturalSpawnSettingsJsonCodec {
                 getStringList(json, "blocks_at"), getStringList(json, "excluded_blocks_at"),
                 getStringList(json, "blocks_above"), getStringList(json, "excluded_blocks_above"),
                 getEnumList(json, "spawn_types", MobSpawnType.class, List.of(MobSpawnType.NATURAL)),
-                getEnumList(json, "excluded_spawn_types", MobSpawnType.class, List.of()));
+                getEnumList(json, "excluded_spawn_types", MobSpawnType.class, List.of()),
+                getStringList(json, "spawn_types").stream().anyMatch("unknown"::equalsIgnoreCase),
+                getStringList(json, "excluded_spawn_types").stream().anyMatch("unknown"::equalsIgnoreCase));
     }
 
     private static void addNullable(JsonObject json, String key, Number value) {
