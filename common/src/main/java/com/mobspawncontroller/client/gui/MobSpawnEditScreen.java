@@ -41,6 +41,7 @@ import net.minecraft.world.item.ItemStack;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
@@ -1926,10 +1927,13 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
     }
 
     private void renderAttributeControl(GuiGraphics guiGraphics, MobAttributeControl control, int rowY) {
-        int textX = panelLeft + 14;
+        int iconX = panelLeft + 14;
+        int textX = iconX + AttributeIcons.SIZE + AttributeIcons.GAP;
         int resetX = panelRight - 16 - ATTRIBUTE_RESET_W;
         int controlX = resetX - 6 - ATTRIBUTE_INPUT_W;
         int textMaxWidth = controlX - textX - 12;
+        AttributeIcons.render(guiGraphics, control.id(), iconX,
+                rowY + (ATTRIBUTE_ROW_HEIGHT - AttributeIcons.SIZE) / 2);
         String label = Component.translatable(control.descriptionKey()).getString() + " / " + control.id();
         guiGraphics.drawString(this.font, trimToWidth(label, textMaxWidth), textX,
                 rowY + (ATTRIBUTE_ROW_HEIGHT - font.lineHeight) / 2, control.overridden() ? 0xFFBEEBFF : 0xFFE5E7EB);
@@ -2583,6 +2587,9 @@ public class MobSpawnEditScreen extends AbstractMobSpawnScreen implements Client
         }
         attributeControls.clear();
         attributeControls.addAll(controls);
+        attributeControls.sort(Comparator.comparingInt((MobAttributeControl control) ->
+                        control.id().getNamespace().equals("minecraft") ? 0 : 1)
+                .thenComparing(control -> control.id().toString()));
         attributeInputs.clear();
         for (MobAttributeControl control : controls) {
             attributeInputs.put(control.id(), formatInputValue(control.value(), control.type()));

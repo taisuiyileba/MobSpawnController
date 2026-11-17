@@ -2,6 +2,7 @@ package com.mobspawncontroller.client.gui;
 
 import com.mobspawncontroller.active.ActiveSpawnSettings;
 import com.mobspawncontroller.client.ClientRuleSync;
+import com.mobspawncontroller.client.MobListFilter;
 import com.mobspawncontroller.network.ServerboundRequestRulesPayload;
 import com.mobspawncontroller.natural.NaturalSpawnSettings;
 import com.mobspawncontroller.platform.NetworkBridge;
@@ -16,7 +17,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.MobSpawnType;
 
 import java.util.ArrayList;
@@ -106,6 +106,7 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
     private int contentHeight;
 
     private final Map<EntityType<?>, Entity> entityCache = new HashMap<>();
+    private final MobListFilter mobListFilter = new MobListFilter(entityCache);
 
     public MobSpawnControllerScreen() {
         super(Component.literal("MobSpawnController"));
@@ -141,7 +142,7 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
         }).bounds(listLeft + searchWidth + 4, searchY - 1, 92, 20).build());
 
         allMobIds = BuiltInRegistries.ENTITY_TYPE.entrySet().stream()
-                .filter(entry -> entry.getValue().getCategory() != MobCategory.MISC)
+                .filter(entry -> mobListFilter.isMob(entry.getValue(), this.minecraft.level))
                 .map(entry -> entry.getKey().location())
                 .sorted(Comparator.comparing(ResourceLocation::toString))
                 .collect(Collectors.toList());
@@ -818,7 +819,7 @@ public class MobSpawnControllerScreen extends AbstractMobSpawnScreen implements 
 
     @Override
     public void onClose() {
-        entityCache.clear();
+        mobListFilter.clear();
         super.onClose();
     }
 }
